@@ -69,7 +69,7 @@
 const C = document.getElementById('game'), ctx = C.getContext('2d'), touchControls=document.getElementById('touchControls'), deviceChoice=document.getElementById('deviceChoice'), playerNameInput=document.getElementById('playerNameInput');
 ctx.imageSmoothingEnabled = false;
 const W=C.width,H=C.height,T=40, COLS=32, ROWS=18;
-const keys={}, mouse={x:W/2,y:H/2,down:false};let mobileFire=false,mobileMove={x:0,y:0},mobileAim={x:0,y:0,active:false};let audioCtx=null;const soundLast={};
+const keys={}, mouse={x:W/2,y:H/2,down:false};let mobileFire=false,mobileMove={x:0,y:0},mobileAim={x:0,y:0,active:false};let audioCtx=null,soundMuted=false;const soundLast={};
 
 
 // Original game: a compact, arcade dungeon crawler with pixel-drawn food foes.
@@ -95,6 +95,7 @@ function shade(hex,amt){let n=parseInt(hex.slice(1),16),r=clamp((n>>16)+amt,0,25
 
 // Lightweight synthesized sound effects. No external audio files are needed.
 function sound(kind){
+ if(soundMuted)return;
  try{
   if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();
   let now=audioCtx.currentTime,cooldowns={shoot:.045,hit:.055,enemyShoot:.09};if(cooldowns[kind]&&soundLast[kind]&&now-soundLast[kind]<cooldowns[kind])return;soundLast[kind]=now;
@@ -244,9 +245,10 @@ function togglePause(){
  if(game.state==='playing'){sound('pause');game.state='paused';mouse.down=false;mobileFire=false;mobileMove.x=0;mobileMove.y=0;mobileAim.active=false;}
  else if(game.state==='paused'){sound('resume');game.state='playing';}
 }
+function toggleSound(){soundMuted=!soundMuted;if(!soundMuted)sound('resume')}
 function returnToMenu(){mouse.down=false;mobileFire=false;mobileMove={x:0,y:0};mobileAim={x:0,y:0,active:false};for(const k in keys)keys[k]=false;game.state='title';}
 function pauseControlAt(x,y){return x>=850&&x<=974&&y>=14&&y<=72}
-function pauseMenuChoiceAt(x,y){if(x<W/2-145||x>W/2+145)return '';if(y>=340&&y<=390)return 'resume';if(y>=408&&y<=458)return 'menu';return ''}
+function pauseMenuChoiceAt(x,y){if(x<W/2-145||x>W/2+145)return '';if(y>=324&&y<=374)return 'resume';if(y>=392&&y<=442)return 'sound';if(y>=460&&y<=510)return 'menu';return ''}
 function update(dt){
  if(game.state==='paused')return;
  game.time+=dt;game.shake=Math.max(0,game.shake-dt*32);if(game.noticeT>0)game.noticeT-=dt;
@@ -378,7 +380,7 @@ function drawNutritionQuiz(){
 }
 function drawOverlay(){if(game.state==='playing')return;rect(0,0,W,H,'rgba(5,7,16,.75)');
  if(game.state==='title'){text('PANTRY DELVE',W/2,130,46,palette.gold,'center');text('THE DUNGEON HAS A JUNK-FOOD PROBLEM.',W/2,174,15,palette.cream,'center');rect(W/2-250,201,500,165,'#131c35');rect(W/2-246,205,492,157,'#202d50');text('FACE 14 UNHEALTHY JUNK-FOOD ENEMY TYPES.',W/2,235,13,palette.pink,'center');text('HIDDEN FRUIT & VEGETABLES ARE YOUR FRESH AMMO.',W/2,266,12,palette.lime,'center');text('EACH FLOOR LEVELS UP ENEMY DAMAGE & DURABILITY.',W/2,293,12,palette.gold,'center');text('Q  HARVEST NOVA: BLAST FOES, CRATES & ENEMY SHOTS.',W/2,313,11,palette.blue,'center');text('R  SPICE RAIL: A PIERCING WEAPON SPECIAL.',W/2,333,11,palette.gold,'center');text('WASD / ARROWS  MOVE     MOUSE  AIM & FIRE     E  OPEN CRATE',W/2,351,11,'#b5c4ec','center');drawLeaderboard(W/2-165,385,330);text('CREATED BY JADE RUPIN',W/2,535,12,palette.gold,'center');drawControlChoice();}
- else if(game.state==='paused'){text('PAUSED',W/2,236,43,palette.gold,'center');text('TAKE A BREATH. THE DUNGEON IS FROZEN.',W/2,278,14,palette.cream,'center');rect(W/2-145,340,290,50,'#101933');rect(W/2-141,344,282,42,'#28526a');text('RESUME',W/2,365,16,palette.lime,'center');rect(W/2-145,408,290,50,'#101933');rect(W/2-141,412,282,42,'#4a2941');text('MAIN MENU',W/2,433,16,palette.pink,'center');text('PRESS P / ESC, OR TAP RESUME',W/2,490,11,'#b5c4ec','center');}
+ else if(game.state==='paused'){text('PAUSED',W/2,218,43,palette.gold,'center');text('TAKE A BREATH. THE DUNGEON IS FROZEN.',W/2,260,14,palette.cream,'center');rect(W/2-145,324,290,50,'#101933');rect(W/2-141,328,282,42,'#28526a');text('RESUME',W/2,349,16,palette.lime,'center');rect(W/2-145,392,290,50,'#101933');rect(W/2-141,396,282,42,'#3d355a');text(`SOUND EFFECTS: ${soundMuted?'OFF':'ON'}`,W/2,417,15,soundMuted?palette.pink:palette.lime,'center');rect(W/2-145,460,290,50,'#101933');rect(W/2-141,464,282,42,'#4a2941');text('MAIN MENU',W/2,485,16,palette.pink,'center');text('P / ESC RESUMES · M TOGGLES SOUND',W/2,540,11,'#b5c4ec','center');}
  else if(game.state==='quiz'){drawNutritionQuiz();}
  else if(game.state==='upgrade'){text('FLOOR CLEARED',W/2,174,36,palette.lime,'center');text('CHOOSE ONE WEAPON UPGRADE',W/2,211,16,palette.cream,'center');for(let i=0;i<game.upgradeOptions.length;i++){let u=game.upgradeOptions[i],x=W/2-345+i*235,y=258;rect(x,y,215,177,'#101933');rect(x+4,y+4,207,169,i===0?'#394d7d':'#263557');text(`${i+1}`,x+18,y+21,14,palette.gold,'center');text(u.name,x+107,y+55,16,palette.gold,'center');text(u.tag,x+107,y+86,13,palette.lime,'center');text(u.detail,x+107,y+115,11,palette.cream,'center');text(`PRESS ${i+1} / CLICK`,x+107,y+151,10,'#b5c4ec','center');}}
  else if(game.state==='dead'){text('YOU GOT SERVED.',W/2,282,36,palette.pink,'center');text(`${game.playerName||'RAIDER'} · JUNK PURGED: ${game.kills}    SCORE: ${game.score}`,W/2,326,15,palette.cream,'center');text('CREATED BY JADE RUPIN',W/2,365,11,palette.gold,'center');text('PRESS ENTER OR CLICK TO RAID AGAIN',W/2,397,14,palette.gold,'center');}
@@ -402,9 +404,9 @@ function chooseControlMode(mode){
  let name=playerNameInput.value.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,14);if(!name){playerNameInput.classList.add('required');playerNameInput.placeholder='NAME REQUIRED';playerNameInput.focus();return}
  game.playerName=name.toUpperCase();playerNameInput.value=game.playerName;playerNameInput.classList.remove('required');game.controlMode=mode;mobileFire=false;mobileMove={x:0,y:0};mobileAim={x:0,y:0,active:false};start()
 }
-window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(['p','escape'].includes(k)&&(game.state==='playing'||game.state==='paused')){e.preventDefault();togglePause();return}keys[k]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' ','enter'].includes(k))e.preventDefault();if(k==='enter'&&(game.state==='title'||game.state==='dead'||game.state==='win')){if(game.state==='title')chooseControlMode('pc');else start()}if(game.state==='quiz'&&['1','2','3'].includes(k))answerNutritionQuiz(Number(k)-1);if(game.state==='upgrade'&&['1','2','3'].includes(k))chooseUpgrade(Number(k)-1);});
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(k==='m'&&game.state==='paused'){e.preventDefault();toggleSound();return}if(['p','escape'].includes(k)&&(game.state==='playing'||game.state==='paused')){e.preventDefault();togglePause();return}keys[k]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' ','enter'].includes(k))e.preventDefault();if(k==='enter'&&(game.state==='title'||game.state==='dead'||game.state==='win')){if(game.state==='title')chooseControlMode('pc');else start()}if(game.state==='quiz'&&['1','2','3'].includes(k))answerNutritionQuiz(Number(k)-1);if(game.state==='upgrade'&&['1','2','3'].includes(k))chooseUpgrade(Number(k)-1);});
 window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
-C.addEventListener('pointermove',e=>Object.assign(mouse,canvasPoint(e)));C.addEventListener('pointerdown',e=>{Object.assign(mouse,canvasPoint(e));if(game.state==='title'){let mode=controlChoiceAt(mouse.x,mouse.y);if(mode)chooseControlMode(mode);return}if(game.state==='paused'){let choice=pauseMenuChoiceAt(mouse.x,mouse.y);if(choice==='resume')togglePause();else if(choice==='menu')returnToMenu();return}if(game.state==='playing'&&pauseControlAt(mouse.x,mouse.y)){togglePause();return}if(game.state==='dead'||game.state==='win'){start();return}else if(game.state==='quiz'){let i=quizChoiceAt(mouse.x,mouse.y);if(i>=0)answerNutritionQuiz(i);return}else if(game.state==='upgrade'){let i=Math.floor((mouse.x-(W/2-345))/235);if(mouse.y>=258&&mouse.y<=435&&i>=0&&i<3&&mouse.x>=W/2-345+i*235&&mouse.x<=W/2-130+i*235)chooseUpgrade(i);return}mouse.down=true;try{C.setPointerCapture(e.pointerId)}catch(err){}});window.addEventListener('pointerup',()=>mouse.down=false);C.addEventListener('contextmenu',e=>e.preventDefault());
+C.addEventListener('pointermove',e=>Object.assign(mouse,canvasPoint(e)));C.addEventListener('pointerdown',e=>{Object.assign(mouse,canvasPoint(e));if(game.state==='title'){let mode=controlChoiceAt(mouse.x,mouse.y);if(mode)chooseControlMode(mode);return}if(game.state==='paused'){let choice=pauseMenuChoiceAt(mouse.x,mouse.y);if(choice==='resume')togglePause();else if(choice==='sound')toggleSound();else if(choice==='menu')returnToMenu();return}if(game.state==='playing'&&pauseControlAt(mouse.x,mouse.y)){togglePause();return}if(game.state==='dead'||game.state==='win'){start();return}else if(game.state==='quiz'){let i=quizChoiceAt(mouse.x,mouse.y);if(i>=0)answerNutritionQuiz(i);return}else if(game.state==='upgrade'){let i=Math.floor((mouse.x-(W/2-345))/235);if(mouse.y>=258&&mouse.y<=435&&i>=0&&i<3&&mouse.x>=W/2-345+i*235&&mouse.x<=W/2-130+i*235)chooseUpgrade(i);return}mouse.down=true;try{C.setPointerCapture(e.pointerId)}catch(err){}});window.addEventListener('pointerup',()=>mouse.down=false);C.addEventListener('contextmenu',e=>e.preventDefault());
 function bindVirtualStick(stick,kind){
  const knob=stick.querySelector('.stick-knob');let activeId=null;
  function setVector(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,max=r.width*.31,len=Math.hypot(dx,dy)||1,scale=Math.min(1,max/len),vx=dx*scale/max,vy=dy*scale/max;knob.style.transform=`translate(calc(-50% + ${vx*max}px),calc(-50% + ${vy*max}px))`;if(kind==='move'){mobileMove.x=vx;mobileMove.y=vy}else{mobileAim={x:vx,y:vy,active:Math.hypot(vx,vy)>.12};mobileFire=mobileAim.active}}
