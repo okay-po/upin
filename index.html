@@ -73,7 +73,7 @@ const keys={}, mouse={x:W/2,y:H/2,down:false};let mobileFire=false,mobileMove={x
 
 
 // Original game: a compact, arcade dungeon crawler with pixel-drawn food foes.
-const game={floor:1,maxFloor:5,state:'title',time:0,shake:0,score:0,kills:0,needProduce:0,collected:0,notice:'',noticeT:0,exit:null,map:[],player:null,enemies:[],bullets:[],drops:[],crates:[],particles:[],decor:[],spawnClock:0,weapon:{level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0},skill:{cool:0,max:7,flash:0},upgradeOptions:[],leaderboard:[],scoreSaved:false,theme:null,controlMode:null,playerName:'',nutritionQuizPassed:false,quiz:null,finalRank:null};
+const game={floor:1,maxFloor:5,state:'title',time:0,shake:0,score:0,kills:0,needProduce:0,collected:0,notice:'',noticeT:0,exit:null,map:[],player:null,enemies:[],bullets:[],drops:[],crates:[],particles:[],decor:[],spawnClock:0,weapon:{level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0},skill:{cool:0,max:7,flash:0},upgradeOptions:[],leaderboard:[],scoreSaved:false,theme:null,controlMode:null,playerName:'',nutritionQuizFloor:0,quiz:null,character:'broccoli',characterChosen:false,finalRank:null};
 const palette={wall:'#34436b', wallDark:'#222b4c', floor:'#151d35', grout:'#202a48', cream:'#fff2c7', lime:'#a8f5cb', pink:'#ff6f9f', orange:'#ff9c5b', gold:'#ffc857', red:'#f34f69', blue:'#77baff', dark:'#0b1020'};
 const healthyAmmo=['pea','carrot','berry','apple'];
 const ammoColors={pea:'#91df72',carrot:'#ffad50',berry:'#bd83f3',apple:'#f36b62',goldenCarrot:'#ffc857'};
@@ -222,13 +222,20 @@ const nutritionQuizBank=[
  {kind:'UNHEALTHY FOOD',prompt:'Which one is an unhealthy food?',correct:'COLA CAN',choices:['WATER','COLA CAN','CARROT']},
  {kind:'HEALTHY FOOD',prompt:'Which food helps power your fresh ammo?',correct:'APPLE',choices:['CHIPS BAG','APPLE','CUPCAKE']}
 ];
-function makeNutritionQuiz(){let source=nutritionQuizBank[randi(0,nutritionQuizBank.length-1)],choices=source.choices.slice().sort(()=>Math.random()-.5);return {kind:source.kind,prompt:source.prompt,choices,correctIndex:choices.indexOf(source.correct),message:'SELECT THE CORRECT ANSWER TO UNLOCK FLOOR 2',failed:false}}
+const heroOptions=[
+ {id:'broccoli',name:'BROCCOLI',tag:'LEAFY GUARDIAN',color:'#74c96d'},
+ {id:'carrot',name:'CARROT',tag:'ROOT RUNNER',color:'#ffad55'},
+ {id:'apple',name:'APPLE',tag:'ORCHARD HERO',color:'#ef6563'}
+];
+function makeNutritionQuiz(){let source=nutritionQuizBank[randi(0,nutritionQuizBank.length-1)],choices=source.choices.slice().sort(()=>Math.random()-.5);return {kind:source.kind,prompt:source.prompt,choices,correctIndex:choices.indexOf(source.correct),message:`SELECT THE CORRECT ANSWER TO UNLOCK FLOOR ${game.floor+1}`,failed:false}}
 function beginUpgrade(){game.state='upgrade';game.upgradeOptions=makeUpgrades();game.notice='CHOOSE A WEAPON UPGRADE';game.noticeT=99;sound('clear')}
 function answerNutritionQuiz(index){
  let q=game.quiz;if(game.state!=='quiz'||!q||index<0||index>=q.choices.length)return;
- if(index===q.correctIndex){sound('correct');game.nutritionQuizPassed=true;game.score+=100;game.notice='CORRECT! NUTRITION CHECK PASSED · +100 SCORE';game.noticeT=3;beginUpgrade()}
- else {sound('wrong');q.failed=true;q.message='INCORRECT — FLOOR 2 IS LOCKED. TRY AGAIN.';game.shake=6;}
+ if(index===q.correctIndex){sound('correct');game.nutritionQuizFloor=game.floor;game.score+=100;game.notice='CORRECT! NUTRITION CHECK PASSED · +100 SCORE';game.noticeT=3;if(game.floor===1&&!game.characterChosen){game.state='character';}else beginUpgrade()}
+ else {sound('wrong');q.failed=true;q.message=`INCORRECT — FLOOR ${game.floor+1} IS LOCKED. TRY AGAIN.`;game.shake=6;}
 }
+function chooseCharacter(index){let hero=heroOptions[index];if(game.state!=='character'||!hero)return;game.character=hero.id;game.characterChosen=true;game.notice=`${hero.name} HERO SELECTED FOR ALL REMAINING FLOORS`;game.noticeT=3;sound('pickup');beginUpgrade()}
+
 function chooseUpgrade(index){
  if(game.state!=='upgrade'||!game.upgradeOptions[index])return;let u=game.upgradeOptions[index];u.apply();game.weapon.level++;game.floor++;sound('upgrade');resetFloor();game.notice=`${u.name} INSTALLED — FLOOR ${game.floor}`;game.noticeT=3;
 }
@@ -239,7 +246,7 @@ function openCrate(c){if(c.open)return;c.open=true;game.drops.push({x:c.x,y:c.y,
 function collect(d){let p=game.player;if(d.kind==='heart'){p.hp=Math.min(p.maxHp,p.hp+1);game.notice='+1 HEART';}else{game.collected++;game.score+=50;game.notice=`${d.kind==='veg'?'VEGETABLE':'FRUIT'} FOUND! ${game.collected}/${game.needProduce}`;if(game.collected>=game.needProduce) game.notice='ALL PRODUCE FOUND — EXIT IS READY!';}game.noticeT=2;d.life=0;sound('pickup');emit(d.x,d.y,d.kind==='veg'?'#88e385':'#ff7a65',13,95)}
 function hasCleared(){return game.enemies.every(e=>e.dead)}
 function canExit(){return hasCleared()&&game.collected>=game.needProduce}
-function advanceFloor(){ if(!canExit())return; if(game.floor>=game.maxFloor){game.state='win';game.notice='THE PANTRY IS SAVED!';game.noticeT=99;game.score+=200;saveScore();sound('win');} else if(game.floor===1&&!game.nutritionQuizPassed){game.state='quiz';game.quiz=makeNutritionQuiz();game.notice='NUTRITION CHECKPOINT — ANSWER TO ENTER FLOOR 2';game.noticeT=99;} else beginUpgrade(); }
+function advanceFloor(){ if(!canExit())return; if(game.floor>=game.maxFloor){game.state='win';game.notice='THE PANTRY IS SAVED!';game.noticeT=99;game.score+=200;saveScore();sound('win');} else if(game.nutritionQuizFloor!==game.floor){game.state='quiz';game.quiz=makeNutritionQuiz();game.notice=`NUTRITION CHECKPOINT — ANSWER TO ENTER FLOOR ${game.floor+1}`;game.noticeT=99;} else if(game.floor===1&&!game.characterChosen){game.state='character';} else beginUpgrade(); }
 
 function togglePause(){
  if(game.state==='playing'){sound('pause');game.state='paused';mouse.down=false;mobileFire=false;mobileMove.x=0;mobileMove.y=0;mobileAim.active=false;}
@@ -285,17 +292,32 @@ function update(dt){
 function updateParticles(dt){for(const q of game.particles){q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=.91;q.vy*=.91;q.life-=dt}game.particles=game.particles.filter(q=>q.life>0)}
 
 function px(x,y,w,h,c){rect(x,y,w,h,c)}
+function tileNoise(x,y){return ((x*73856093)^(y*19349663)^(x*y*83492791))>>>0}
 function drawFloor(){
- let theme=game.theme||floorThemes[0];rect(0,0,W,H,theme.floorA);
+ let theme=game.theme||floorThemes[0];let backdrop=ctx.createLinearGradient(0,0,0,H);backdrop.addColorStop(0,shade(theme.floorA,12));backdrop.addColorStop(1,theme.floorA);ctx.fillStyle=backdrop;ctx.fillRect(0,0,W,H);
  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
-  if(game.map[y][x]){px(x*T,y*T,T,T,theme.wallDark);px(x*T+3,y*T+3,T-6,T-6,theme.wall);px(x*T+6,y*T+6,T-12,4,theme.edge);px(x*T+6,y*T+30,T-12,4,shade(theme.wallDark,12));}
-  else {px(x*T,y*T,T,T,(x+y)%2?theme.floorA:theme.floorB);px(x*T,y*T,T,1,shade(theme.wallDark,15));px(x*T,y*T,1,T,shade(theme.wallDark,15));}
+  let n=tileNoise(x,y),tx=x*T,ty=y*T;
+  if(game.map[y][x]){
+   // Layered stone blocks: top edge, face, lower bevel, chips and mortar seams.
+   px(tx,ty,T,T,theme.wallDark);px(tx+2,ty+2,T-4,T-4,shade(theme.wall,-((n>>3)%8)));px(tx+4,ty+4,T-8,5,theme.edge);px(tx+4,ty+T-9,T-8,5,shade(theme.wallDark,11));px(tx+3,ty+3,4,T-6,shade(theme.wall,12));
+   let seam=ty+18+(n%7);px(tx+7,seam,T-14,2,shade(theme.wallDark,-8));if(n%3===0)px(tx+18+(n%8),ty+9,3,5,shade(theme.wallDark,-5));if(n%5===0)px(tx+8,ty+28,5,2,shade(theme.wall,14));
+  }else{
+   let base=(x+y)%2?theme.floorA:theme.floorB;px(tx,ty,T,T,base);px(tx,ty,T,1,shade(theme.wallDark,16));px(tx,ty,1,T,shade(theme.wallDark,16));
+   // Deterministic dirt, worn grout and occasional hairline cracks give the floor material depth.
+   if(n%3===0)px(tx+6+(n%17),ty+8+((n>>5)%19),2,2,shade(base,-12));if(n%7===0){let cx=tx+9+(n%15),cy=ty+11+((n>>6)%13);px(cx,cy,7,1,shade(theme.wallDark,9));px(cx+5,cy+1,1,5,shade(theme.wallDark,9));}
+  }
  }
- for(const d of game.decor){ if(!wallAt(d.x,d.y)){let c=d.type===0?shade(theme.wall, -12):d.type===1?shade(theme.wallDark,20):shade(theme.floorB,16);px(d.x-2,d.y-2,4,4,c)} }
+ for(const d of game.decor){if(!wallAt(d.x,d.y)){let c=d.type===0?shade(theme.wall,-12):d.type===1?shade(theme.wallDark,22):shade(theme.floorB,18);px(d.x-2,d.y-2,4,4,c);px(d.x-1,d.y-2,2,1,shade(c,22));}}
 }
-function drawCrate(c){let x=c.x,y=c.y;if(c.open){px(x-16,y+10,32,5,'#80513c');px(x-13,y+6,7,5,'#b7804f');px(x+7,y+5,6,5,'#b7804f');return}px(x-15,y-13,30,28,'#724935');px(x-12,y-10,24,22,'#bd7c4b');px(x-14,y-2,28,4,'#81503a');px(x-2,y-11,4,24,'#845039');px(x-11,y-8,4,4,'#e7ad61');}
+function drawDungeonLighting(){
+ let p=game.player;ctx.save();ctx.fillStyle='rgba(3,7,18,.18)';ctx.fillRect(0,0,W,H);
+ if(p){let g=ctx.createRadialGradient(p.x,p.y,12,p.x,p.y,245);g.addColorStop(0,'rgba(196,255,229,.19)');g.addColorStop(.38,'rgba(83,189,161,.09)');g.addColorStop(1,'rgba(83,189,161,0)');ctx.fillStyle=g;ctx.fillRect(p.x-245,p.y-245,490,490);}
+ if(game.exit&&game.exit.open){let e=game.exit,g=ctx.createRadialGradient(e.x,e.y,3,e.x,e.y,105);g.addColorStop(0,'rgba(207,255,234,.34)');g.addColorStop(1,'rgba(126,255,203,0)');ctx.fillStyle=g;ctx.fillRect(e.x-105,e.y-105,210,210);}ctx.restore();
+}
+function drawVignette(){let g=ctx.createRadialGradient(W/2,H/2,210,W/2,H/2,790);g.addColorStop(.4,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(1,4,13,.42)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}
+function drawCrate(c){let x=c.x,y=c.y;ctx.save();ctx.globalAlpha=.34;ctx.fillStyle='#050914';ctx.beginPath();ctx.ellipse(x,y+16,20,6,0,0,Math.PI*2);ctx.fill();ctx.restore();if(c.open){px(x-16,y+10,32,5,'#674331');px(x-13,y+6,7,5,'#bf8151');px(x+7,y+5,6,5,'#9d603f');px(x-7,y+12,12,2,'#e4b26e');return}px(x-15,y-13,30,28,'#5c382b');px(x-13,y-11,26,24,'#9b613e');px(x-11,y-9,22,20,'#c98b55');px(x-14,y-2,28,4,'#70432f');px(x-2,y-11,4,24,'#754630');px(x-11,y-8,4,4,'#f0bd71');px(x+7,y+5,3,4,'#8d5437');}
 function drawProduce(d){let x=d.x,y=d.y+Math.sin(d.bob)*3;let blink=d.life<3&&Math.floor(d.life*8)%2===0;if(blink)return;if(d.kind==='heart'){px(x-7,y-6,6,7,palette.pink);px(x+1,y-6,6,7,palette.pink);px(x-5,y,10,8,palette.pink);px(x-3,y+7,6,4,palette.pink);return}if(d.kind==='veg'){px(x-8,y-4,16,14,'#69c767');px(x-5,y-10,5,7,'#b4f083');px(x+1,y-10,5,7,'#b4f083');px(x-5,y,4,4,'#a5e88c');}else{px(x-8,y-5,16,15,'#f66d54');px(x-5,y-9,10,5,'#65b96c');px(x-2,y-13,4,5,'#8ad57b');px(x-4,y+1,4,5,'#f9a354');}}
-function drawEnemy(e){let x=e.x,y=e.y,flash=e.hit>0?'#ffffff':e.color;
+function drawEnemy(e){let x=e.x,y=e.y,flash=e.hit>0?'#ffffff':e.color;ctx.save();ctx.globalAlpha=e.boss?.42:.28;ctx.fillStyle='#050914';ctx.beginPath();ctx.ellipse(x,y+e.r*.66,e.r*(e.boss?.95:.78),e.boss?9:5,0,0,Math.PI*2);ctx.fill();ctx.restore();
  if(e.boss){
   // Oversized original boss sprite, with a crown and a different accent per floor.
   px(x-30,y+21,60,6,'#0b1020');px(x-28,y-17,56,37,flash);px(x-24,y-22,48,8,shade(e.color,28));px(x-25,y+12,50,8,shade(e.color,-36));
@@ -341,12 +363,19 @@ function drawEnemy(e){let x=e.x,y=e.y,flash=e.hit>0?'#ffffff':e.color;
  // HP pip
  if(!e.boss&&e.level>1){rect(x-15,y-e.r-18,15,7,'#0b1020');text(`L${e.level}`,x-8,y-e.r-14,7,palette.gold,'center');}if(!e.boss&&e.hp<e.maxHp){rect(x-14,y-e.r-10,28,4,'#461f35');rect(x-14,y-e.r-10,28*e.hp/e.maxHp,4,palette.lime)}
 }
-function drawPlayer(){let p=game.player;if(!p)return;let flash=p.inv>0&&Math.floor(p.inv*14)%2===0;if(flash)return;let x=p.x,y=p.y,a=p.angle; // shadow, tiny adventurer + blaster
- px(x-12,y+11,24,5,'#0b1020');px(x-10,y-14,20,25,'#5b7fca');px(x-13,y-9,26,16,'#6f96e7');px(x-8,y-19,16,9,'#ffe0ae');px(x-5,y-16,10,3,'#6c4660');px(x-7,y-5,4,4,'#27345b');px(x+4,y-5,4,4,'#27345b');ctx.save();ctx.translate(x,y);ctx.rotate(a);px(7,-4,20,8,'#a8f5cb');px(17,-2,7,4,'#fff2c7');ctx.restore();}
+function drawPlayer(){let p=game.player;if(!p)return;let flash=p.inv>0&&Math.floor(p.inv*14)%2===0;if(flash)return;let x=p.x,y=p.y,a=p.angle;ctx.save();ctx.globalAlpha=.38;ctx.fillStyle='#040812';ctx.beginPath();ctx.ellipse(x,y+17,19,6,0,0,Math.PI*2);ctx.fill();ctx.restore(); // Healthy food hero
+ if(game.character==='broccoli'){
+  px(x-8,y-2,16,20,'#4c9b58');px(x-16,y-15,13,15,'#69bd68');px(x-7,y-22,15,22,'#75cb70');px(x+3,y-15,14,15,'#61ad62');px(x-9,y+15,6,8,'#315f40');px(x+3,y+15,6,8,'#315f40');px(x-10,y+4,5,6,'#eaffc4');px(x+5,y+4,5,6,'#eaffc4');px(x-8,y+7,3,3,'#203743');px(x+6,y+7,3,3,'#203743');px(x-3,y+13,7,2,'#d7f49c');
+ } else if(game.character==='carrot'){
+  ctx.beginPath();ctx.moveTo(x-12,y-10);ctx.lineTo(x+12,y-10);ctx.lineTo(x+3,y+20);ctx.lineTo(x-3,y+20);ctx.closePath();ctx.fillStyle='#f49b49';ctx.fill();px(x-10,y-20,5,11,'#75c76b');px(x-2,y-24,5,15,'#9fe57d');px(x+6,y-20,5,11,'#75c76b');px(x-7,y-2,4,5,'#fff0c6');px(x+4,y-2,4,5,'#fff0c6');px(x-6,y+2,3,3,'#26334b');px(x+5,y+2,3,3,'#26334b');
+ } else {
+  px(x-14,y-10,28,24,'#d74e58');px(x-10,y-15,20,7,'#ef6d68');px(x-4,y-22,5,8,'#754c38');px(x+1,y-23,11,5,'#67b771');px(x-10,y+13,6,8,'#65443a');px(x+4,y+13,6,8,'#65443a');px(x-8,y-2,5,6,'#fff0c8');px(x+4,y-2,5,6,'#fff0c8');px(x-6,y+1,3,3,'#26334b');px(x+6,y+1,3,3,'#26334b');
+ }
+ ctx.save();ctx.translate(x,y);ctx.rotate(a);px(7,-4,21,8,'#3e716b');px(10,-2,18,5,'#a8f5cb');px(22,-1,7,3,'#fff9d7');ctx.restore();}
 function drawSkillNova(){let s=game.skill,p=game.player;if(!p||s.flash<=0)return;let progress=1-s.flash/.46,rad=18+progress*138;ctx.save();ctx.globalAlpha=Math.max(.08,s.flash/.46);ctx.strokeStyle=palette.lime;ctx.lineWidth=6;ctx.beginPath();ctx.arc(p.x,p.y,rad,0,Math.PI*2);ctx.stroke();ctx.strokeStyle=palette.gold;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,rad+9,0,Math.PI*2);ctx.stroke();ctx.restore();}
-function drawExit(){let e=game.exit;if(!e)return;let c=e.open?palette.lime:'#5a4966';px(e.x-17,e.y-20,34,40,'#1d2540');px(e.x-14,e.y-17,28,34,c);px(e.x-9,e.y-12,18,27,e.open?'#244e59':'#382e45');px(e.x-3,e.y-6,6,6,e.open?palette.gold:'#8d7180');if(e.open){px(e.x-13,e.y-21,26,3,'#d9fff3');text('GO!',e.x,e.y-29,10,palette.lime,'center')} }
+function drawExit(){let e=game.exit;if(!e)return;let c=e.open?palette.lime:'#5a4966';ctx.save();ctx.globalAlpha=.32;ctx.fillStyle='#050914';ctx.beginPath();ctx.ellipse(e.x,e.y+20,26,7,0,0,Math.PI*2);ctx.fill();ctx.restore();px(e.x-20,e.y-22,40,44,'#10172b');px(e.x-17,e.y-20,34,40,'#273250');px(e.x-14,e.y-17,28,34,c);px(e.x-11,e.y-14,22,29,e.open?'#173e43':'#2e263d');px(e.x-9,e.y-12,18,27,e.open?'#28625c':'#382e45');px(e.x-3,e.y-6,6,6,e.open?palette.gold:'#8d7180');if(e.open){px(e.x-13,e.y-21,26,3,'#d9fff3');px(e.x-10,e.y-18,20,2,'#83e8c4');text('GO!',e.x,e.y-31,10,palette.lime,'center')} }
 function drawHud(){let p=game.player,w=game.weapon,s=game.skill; // top panel
- rect(14,13,402,116,'#0c1123');rect(18,17,394,108,'#1b2541');text('PANTRY DELVE',30,31,16,palette.gold);text(game.playerName||'RAIDER',30,42,8,'#b5c4ec');text(`F${game.floor}/${game.maxFloor} · ${game.theme?game.theme.name:'DUNGEON'}`,399,31,10,palette.lime,'right');
+ rect(14,13,402,116,'#0c1123');rect(18,17,394,108,'#1b2541');text('PANTRY DELVE',30,31,16,palette.gold);text(`${game.playerName||'RAIDER'} · HERO: ${game.character.toUpperCase()}`,30,42,8,'#b5c4ec');text(`F${game.floor}/${game.maxFloor} · ${game.theme?game.theme.name:'DUNGEON'}`,399,31,10,palette.lime,'right');
  text('HP',30,54,11,'#aebae6');for(let i=0;i<p.maxHp;i++){let c=i<p.hp?palette.pink:'#3d4665';px(60+i*20,48,14,12,c);px(63+i*20,45,8,4,c);}
  text(`JUNK ${game.kills}/${game.kills+game.enemies.filter(e=>!e.dead).length} · LV.${game.floor}`,195,54,10,palette.cream);text(`PRODUCE ${game.collected}/${game.needProduce}`,195,70,11,game.collected>=game.needProduce?palette.lime:palette.gold);
  text(`WEAPON LV.${w.level}  DMG ${w.damage}  x${w.spread}`,300,54,10,palette.gold);text(`RATE ${w.fireRate.toFixed(2)}x`,300,70,10,palette.blue);
@@ -373,15 +402,18 @@ function drawLeaderboard(x,y,w=330){
 }
 function quizChoiceAt(x,y){let top=300,w=200,h=126,left=W/2-330;if(y<top||y>top+h)return-1;let i=Math.floor((x-left)/220);return i>=0&&i<3&&x>=left+i*220&&x<=left+i*220+w?i:-1}
 function drawNutritionQuiz(){
- let q=game.quiz;if(!q)return;text('NUTRITION CHECKPOINT',W/2,164,35,palette.lime,'center');text('FLOOR 2 IS LOCKED UNTIL YOU ANSWER CORRECTLY',W/2,202,13,palette.gold,'center');
+ let q=game.quiz;if(!q)return;text('NUTRITION CHECKPOINT',W/2,164,35,palette.lime,'center');text(`FLOOR ${game.floor+1} IS LOCKED UNTIL YOU ANSWER CORRECTLY`,W/2,202,13,palette.gold,'center');
  rect(W/2-330,224,660,57,'#101933');rect(W/2-326,228,652,49,'#263b50');text(q.kind,W/2,243,11,palette.lime,'center');text(q.prompt,W/2,263,18,palette.cream,'center');
  for(let i=0;i<q.choices.length;i++){let x=W/2-330+i*220,y=300;rect(x,y,200,126,'#101933');rect(x+4,y+4,192,118,q.failed?'#4b2841':'#263b65');text(`${i+1}`,x+18,y+20,14,palette.gold,'center');text(q.choices[i],x+100,y+57,16,palette.cream,'center');text('CLICK / PRESS '+(i+1),x+100,y+96,10,'#b5c4ec','center');}
- text(q.message,W/2,460,13,q.failed?palette.pink:palette.cream,'center');text('A WRONG ANSWER WILL NOT LET YOU ENTER FLOOR 2.',W/2,486,11,palette.gold,'center');
+ text(q.message,W/2,460,13,q.failed?palette.pink:palette.cream,'center');text(`A WRONG ANSWER WILL NOT LET YOU ENTER FLOOR ${game.floor+1}.`,W/2,486,11,palette.gold,'center');
 }
+function characterChoiceAt(x,y){let top=286,w=200,h=145,left=W/2-330;if(y<top||y>top+h)return-1;let i=Math.floor((x-left)/220);return i>=0&&i<3&&x>=left+i*220&&x<=left+i*220+w?i:-1}
+function drawCharacterSelect(){text('CHOOSE YOUR HEALTHY HERO',W/2,158,34,palette.lime,'center');text('THIS HERO WILL JOIN YOU ON EVERY REMAINING FLOOR',W/2,197,13,palette.cream,'center');for(let i=0;i<heroOptions.length;i++){let h=heroOptions[i],x=W/2-330+i*220,y=286;rect(x,y,200,145,'#101933');rect(x+4,y+4,192,137,i===0?'#315642':'#263b65');text(`${i+1}`,x+19,y+21,14,palette.gold,'center');text(h.name,x+100,y+53,16,h.color,'center');text(h.tag,x+100,y+82,10,palette.cream,'center');text('SELECT HERO',x+100,y+116,10,'#b5c4ec','center');}text('BROCCOLI IS THE DEFAULT HERO FOR FLOOR 1.',W/2,474,11,palette.gold,'center');}
 function drawOverlay(){if(game.state==='playing')return;rect(0,0,W,H,'rgba(5,7,16,.75)');
  if(game.state==='title'){text('PANTRY DELVE',W/2,130,46,palette.gold,'center');text('THE DUNGEON HAS A JUNK-FOOD PROBLEM.',W/2,174,15,palette.cream,'center');rect(W/2-250,201,500,165,'#131c35');rect(W/2-246,205,492,157,'#202d50');text('FACE 14 UNHEALTHY JUNK-FOOD ENEMY TYPES.',W/2,235,13,palette.pink,'center');text('HIDDEN FRUIT & VEGETABLES ARE YOUR FRESH AMMO.',W/2,266,12,palette.lime,'center');text('EACH FLOOR LEVELS UP ENEMY DAMAGE & DURABILITY.',W/2,293,12,palette.gold,'center');text('Q  HARVEST NOVA: BLAST FOES, CRATES & ENEMY SHOTS.',W/2,313,11,palette.blue,'center');text('R  SPICE RAIL: A PIERCING WEAPON SPECIAL.',W/2,333,11,palette.gold,'center');text('WASD / ARROWS  MOVE     MOUSE  AIM & FIRE     E  OPEN CRATE',W/2,351,11,'#b5c4ec','center');drawLeaderboard(W/2-165,385,330);text('CREATED BY JADE RUPIN',W/2,535,12,palette.gold,'center');drawControlChoice();}
  else if(game.state==='paused'){text('PAUSED',W/2,218,43,palette.gold,'center');text('TAKE A BREATH. THE DUNGEON IS FROZEN.',W/2,260,14,palette.cream,'center');rect(W/2-145,324,290,50,'#101933');rect(W/2-141,328,282,42,'#28526a');text('RESUME',W/2,349,16,palette.lime,'center');rect(W/2-145,392,290,50,'#101933');rect(W/2-141,396,282,42,'#3d355a');text(`SOUND EFFECTS: ${soundMuted?'OFF':'ON'}`,W/2,417,15,soundMuted?palette.pink:palette.lime,'center');rect(W/2-145,460,290,50,'#101933');rect(W/2-141,464,282,42,'#4a2941');text('MAIN MENU',W/2,485,16,palette.pink,'center');text('P / ESC RESUMES · M TOGGLES SOUND',W/2,540,11,'#b5c4ec','center');}
  else if(game.state==='quiz'){drawNutritionQuiz();}
+ else if(game.state==='character'){drawCharacterSelect();}
  else if(game.state==='upgrade'){text('FLOOR CLEARED',W/2,174,36,palette.lime,'center');text('CHOOSE ONE WEAPON UPGRADE',W/2,211,16,palette.cream,'center');for(let i=0;i<game.upgradeOptions.length;i++){let u=game.upgradeOptions[i],x=W/2-345+i*235,y=258;rect(x,y,215,177,'#101933');rect(x+4,y+4,207,169,i===0?'#394d7d':'#263557');text(`${i+1}`,x+18,y+21,14,palette.gold,'center');text(u.name,x+107,y+55,16,palette.gold,'center');text(u.tag,x+107,y+86,13,palette.lime,'center');text(u.detail,x+107,y+115,11,palette.cream,'center');text(`PRESS ${i+1} / CLICK`,x+107,y+151,10,'#b5c4ec','center');}}
  else if(game.state==='dead'){text('YOU GOT SERVED.',W/2,282,36,palette.pink,'center');text(`${game.playerName||'RAIDER'} · JUNK PURGED: ${game.kills}    SCORE: ${game.score}`,W/2,326,15,palette.cream,'center');text('CREATED BY JADE RUPIN',W/2,365,11,palette.gold,'center');text('PRESS ENTER OR CLICK TO RAID AGAIN',W/2,397,14,palette.gold,'center');}
  else if(game.state==='win'){let top=game.leaderboard[0],rank=game.finalRank||game.leaderboard.findIndex(row=>row.name===game.playerName&&row.score===game.score)+1;text('ALL 5 FLOORS CLEARED!',W/2,151,13,palette.gold,'center');text('PANTRY SAVED!',W/2,185,42,palette.lime,'center');text('Every greasy invader is gone. Every fresh snack is safe.',W/2,230,15,palette.cream,'center');text(`${game.playerName||'RAIDER'} · FINAL SCORE: ${game.score}`,W/2,263,19,palette.gold,'center');drawLeaderboard(W/2-165,285,330);text(`YOUR RANK: #${rank}     TOP PLAYER: ${top?top.name:'—'} · ${top?top.score:0}`,W/2,433,12,palette.cream,'center');text('CREATED BY JADE RUPIN',W/2,464,12,palette.gold,'center');text('PRESS ENTER OR CLICK FOR A NEW RUN',W/2,500,14,palette.cream,'center');}
@@ -396,17 +428,17 @@ function drawProjectile(q){
  else {px(x-6,y-5,12,11,ammoColors.apple);px(x-3,y-9,5,5,'#6fbd70');px(x-2,y-2,3,3,'#ffe6b3');}
 }
 function syncTouchControls(){let active=game.controlMode==='mobile'&&game.state==='playing';touchControls.classList.toggle('active',active);deviceChoice.classList.toggle('active',game.state==='title');if(!active){mobileFire=false;mobileMove.x=0;mobileMove.y=0;mobileAim.active=false;}}
-function render(){syncTouchControls();let sx=game.shake?rand(-game.shake,game.shake):0,sy=game.shake?rand(-game.shake,game.shake):0;ctx.save();ctx.translate(sx,sy);drawFloor();drawExit();for(const c of game.crates)drawCrate(c);for(const d of game.drops)drawProduce(d);for(const e of game.enemies)if(!e.dead||e.dead>0)drawEnemy(e);for(const q of game.bullets)drawProjectile(q);for(const q of game.particles){ctx.globalAlpha=Math.max(0,q.life/q.max);px(q.x-q.size/2,q.y-q.size/2,q.size,q.size,q.color)}ctx.globalAlpha=1;drawPlayer();drawSkillNova();ctx.restore();if(game.player)drawHud();drawOverlay();}
+function render(){syncTouchControls();let sx=game.shake?rand(-game.shake,game.shake):0,sy=game.shake?rand(-game.shake,game.shake):0;ctx.save();ctx.translate(sx,sy);drawFloor();drawDungeonLighting();drawExit();for(const c of game.crates)drawCrate(c);for(const d of game.drops)drawProduce(d);for(const e of game.enemies)if(!e.dead||e.dead>0)drawEnemy(e);for(const q of game.bullets)drawProjectile(q);for(const q of game.particles){ctx.globalAlpha=Math.max(0,q.life/q.max);px(q.x-q.size/2,q.y-q.size/2,q.size,q.size,q.color)}ctx.globalAlpha=1;drawPlayer();drawSkillNova();drawVignette();ctx.restore();if(game.player)drawHud();drawOverlay();}
 let last=performance.now();function loop(now){let dt=Math.min(.033,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(loop)}
-function start(){if(!game.controlMode)game.controlMode='pc';sound('start');game.floor=1;game.score=0;game.scoreSaved=false;game.finalRank=null;game.weapon={level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0};game.skill={cool:0,max:7,flash:0};game.upgradeOptions=[];game.nutritionQuizPassed=false;game.quiz=null;resetFloor()}
+function start(){if(!game.controlMode)game.controlMode='pc';sound('start');game.floor=1;game.score=0;game.scoreSaved=false;game.finalRank=null;game.weapon={level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0};game.skill={cool:0,max:7,flash:0};game.upgradeOptions=[];game.nutritionQuizFloor=0;game.quiz=null;game.character='broccoli';game.characterChosen=false;resetFloor()}
 function canvasPoint(ev){let r=C.getBoundingClientRect();return {x:(ev.clientX-r.left)*W/r.width,y:(ev.clientY-r.top)*H/r.height}}
 function chooseControlMode(mode){
  let name=playerNameInput.value.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,14);if(!name){playerNameInput.classList.add('required');playerNameInput.placeholder='NAME REQUIRED';playerNameInput.focus();return}
  game.playerName=name.toUpperCase();playerNameInput.value=game.playerName;playerNameInput.classList.remove('required');game.controlMode=mode;mobileFire=false;mobileMove={x:0,y:0};mobileAim={x:0,y:0,active:false};start()
 }
-window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(k==='m'&&game.state==='paused'){e.preventDefault();toggleSound();return}if(['p','escape'].includes(k)&&(game.state==='playing'||game.state==='paused')){e.preventDefault();togglePause();return}keys[k]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' ','enter'].includes(k))e.preventDefault();if(k==='enter'&&(game.state==='title'||game.state==='dead'||game.state==='win')){if(game.state==='title')chooseControlMode('pc');else start()}if(game.state==='quiz'&&['1','2','3'].includes(k))answerNutritionQuiz(Number(k)-1);if(game.state==='upgrade'&&['1','2','3'].includes(k))chooseUpgrade(Number(k)-1);});
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(k==='m'&&game.state==='paused'){e.preventDefault();toggleSound();return}if(['p','escape'].includes(k)&&(game.state==='playing'||game.state==='paused')){e.preventDefault();togglePause();return}keys[k]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' ','enter'].includes(k))e.preventDefault();if(k==='enter'&&(game.state==='title'||game.state==='dead'||game.state==='win')){if(game.state==='title')chooseControlMode('pc');else start()}if(game.state==='quiz'&&['1','2','3'].includes(k))answerNutritionQuiz(Number(k)-1);if(game.state==='character'&&['1','2','3'].includes(k))chooseCharacter(Number(k)-1);if(game.state==='upgrade'&&['1','2','3'].includes(k))chooseUpgrade(Number(k)-1);});
 window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
-C.addEventListener('pointermove',e=>Object.assign(mouse,canvasPoint(e)));C.addEventListener('pointerdown',e=>{Object.assign(mouse,canvasPoint(e));if(game.state==='title'){let mode=controlChoiceAt(mouse.x,mouse.y);if(mode)chooseControlMode(mode);return}if(game.state==='paused'){let choice=pauseMenuChoiceAt(mouse.x,mouse.y);if(choice==='resume')togglePause();else if(choice==='sound')toggleSound();else if(choice==='menu')returnToMenu();return}if(game.state==='playing'&&pauseControlAt(mouse.x,mouse.y)){togglePause();return}if(game.state==='dead'||game.state==='win'){start();return}else if(game.state==='quiz'){let i=quizChoiceAt(mouse.x,mouse.y);if(i>=0)answerNutritionQuiz(i);return}else if(game.state==='upgrade'){let i=Math.floor((mouse.x-(W/2-345))/235);if(mouse.y>=258&&mouse.y<=435&&i>=0&&i<3&&mouse.x>=W/2-345+i*235&&mouse.x<=W/2-130+i*235)chooseUpgrade(i);return}mouse.down=true;try{C.setPointerCapture(e.pointerId)}catch(err){}});window.addEventListener('pointerup',()=>mouse.down=false);C.addEventListener('contextmenu',e=>e.preventDefault());
+C.addEventListener('pointermove',e=>Object.assign(mouse,canvasPoint(e)));C.addEventListener('pointerdown',e=>{Object.assign(mouse,canvasPoint(e));if(game.state==='title'){let mode=controlChoiceAt(mouse.x,mouse.y);if(mode)chooseControlMode(mode);return}if(game.state==='paused'){let choice=pauseMenuChoiceAt(mouse.x,mouse.y);if(choice==='resume')togglePause();else if(choice==='sound')toggleSound();else if(choice==='menu')returnToMenu();return}if(game.state==='playing'&&pauseControlAt(mouse.x,mouse.y)){togglePause();return}if(game.state==='dead'||game.state==='win'){start();return}else if(game.state==='quiz'){let i=quizChoiceAt(mouse.x,mouse.y);if(i>=0)answerNutritionQuiz(i);return}else if(game.state==='character'){let i=characterChoiceAt(mouse.x,mouse.y);if(i>=0)chooseCharacter(i);return}else if(game.state==='upgrade'){let i=Math.floor((mouse.x-(W/2-345))/235);if(mouse.y>=258&&mouse.y<=435&&i>=0&&i<3&&mouse.x>=W/2-345+i*235&&mouse.x<=W/2-130+i*235)chooseUpgrade(i);return}mouse.down=true;try{C.setPointerCapture(e.pointerId)}catch(err){}});window.addEventListener('pointerup',()=>mouse.down=false);C.addEventListener('contextmenu',e=>e.preventDefault());
 function bindVirtualStick(stick,kind){
  const knob=stick.querySelector('.stick-knob');let activeId=null;
  function setVector(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,max=r.width*.31,len=Math.hypot(dx,dy)||1,scale=Math.min(1,max/len),vx=dx*scale/max,vy=dy*scale/max;knob.style.transform=`translate(calc(-50% + ${vx*max}px),calc(-50% + ${vy*max}px))`;if(kind==='move'){mobileMove.x=vx;mobileMove.y=vy}else{mobileAim={x:vx,y:vy,active:Math.hypot(vx,vy)>.12};mobileFire=mobileAim.active}}
