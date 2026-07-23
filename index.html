@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pantry Delve — Pixel Dungeon Shooter</title>
+<style>
+  :root { --ink:#101428; --panel:#18213c; --cream:#fff2c7; --mint:#a8f5cb; --pink:#ff6f9f; --gold:#ffc857; }
+  * { box-sizing:border-box; }
+  html,body { width:100%; height:100%; margin:0; overflow:hidden; background:#0a0e1c; color:var(--cream); font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+  body { display:grid; place-items:center; background:radial-gradient(ellipse at 50% 10%,#28335d 0,#10172d 40%,#070a14 100%); }
+  #shell { position:relative; width:min(100vw, 1280px); aspect-ratio:16/9; max-height:100vh; box-shadow:0 0 0 4px #273052,0 0 55px rgba(89,116,255,.28); }
+  canvas { display:block; width:100%; height:100%; image-rendering:pixelated; image-rendering:crisp-edges; cursor:crosshair; background:#121a31; }
+  #caption { position:absolute; left:14px; bottom:10px; z-index:3; font-size:10px; letter-spacing:.08em; color:#9facda; opacity:.84; pointer-events:none; text-shadow:1px 1px #0a0e1c; }
+  @media(max-aspect-ratio: 16/9) { #shell { width:100vw; height:auto; } }
+</style>
+</head>
+<body>
+<div id="shell">
+  <canvas id="game" width="1280" height="720" aria-label="Pantry Delve game"></canvas>
+  <div id="caption">WASD / ARROWS MOVE · MOUSE AIM + FIRE · Q HARVEST NOVA · R RAIL SHOT · E OPEN CRATES · ENTER RESTART</div>
+</div>
+<script>
+(() => {
+'use strict';
+const C = document.getElementById('game'), ctx = C.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const W=C.width,H=C.height,T=40, COLS=32, ROWS=18;
+const keys={}, mouse={x:W/2,y:H/2,down:false};
+
+
+// Original game: a compact, arcade dungeon crawler with pixel-drawn food foes.
+const game={floor:1,maxFloor:5,state:'title',time:0,shake:0,score:0,kills:0,needProduce:0,collected:0,notice:'',noticeT:0,exit:null,map:[],player:null,enemies:[],bullets:[],drops:[],crates:[],particles:[],decor:[],spawnClock:0,weapon:{level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0},skill:{cool:0,max:7,flash:0},upgradeOptions:[],leaderboard:[],scoreSaved:false,theme:null};
+const palette={wall:'#34436b', wallDark:'#222b4c', floor:'#151d35', grout:'#202a48', cream:'#fff2c7', lime:'#a8f5cb', pink:'#ff6f9f', orange:'#ff9c5b', gold:'#ffc857', red:'#f34f69', blue:'#77baff', dark:'#0b1020'};
+const healthyAmmo=['pea','carrot','berry','apple'];
+const ammoColors={pea:'#91df72',carrot:'#ffad50',berry:'#bd83f3',apple:'#f36b62',goldenCarrot:'#ffc857'};
+const SCORE_KEY='pantryDelveTopPlayersV1';
+function loadScores(){try{let saved=JSON.parse(localStorage.getItem(SCORE_KEY)||'[]');return Array.isArray(saved)?saved.filter(x=>x&&Number.isFinite(x.score)&&typeof x.name==='string').slice(0,5):[]}catch(e){return []}}
+function saveScore(){
+ if(game.scoreSaved)return;game.scoreSaved=true;
+ let entry={name:'PANTRY HERO',score:game.score};game.leaderboard=[...game.leaderboard,entry].sort((a,b)=>b.score-a.score).slice(0,5);
+ try{localStorage.setItem(SCORE_KEY,JSON.stringify(game.leaderboard))}catch(e){}
+}
+
+function rand(a,b){return a+Math.random()*(b-a)}
+function randi(a,b){return Math.floor(rand(a,b+1))}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x|0,y|0,w|0,h|0)}
+function text(s,x,y,size=14,color=palette.cream,align='left'){ctx.fillStyle=color;ctx.font=`bold ${size}px ui-monospace, monospace`;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(s,x|0,y|0)}
+function shade(hex,amt){let n=parseInt(hex.slice(1),16),r=clamp((n>>16)+amt,0,255),g=clamp(((n>>8)&255)+amt,0,255),b=clamp((n&255)+amt,0,255);return '#'+(r<<16|g<<8|b).toString(16).padStart(6,'0')}
+
+// Sound effects intentionally disabled. Combat feedback remains visual.
+function sound(kind){}
+
+function tileAt(x,y){let c=Math.floor(x/T),r=Math.floor(y/T); return (r<0||c<0||r>=ROWS||c>=COLS)?1:game.map[r][c]}
+function wallAt(x,y){return tileAt(x,y)===1}
+function collides(x,y,rad){return wallAt(x-rad,y-rad)||wallAt(x+rad,y-rad)||wallAt(x-rad,y+rad)||wallAt(x+rad,y+rad)}
+function moveBody(o,dx,dy){if(!collides(o.x+dx,o.y,o.r))o.x+=dx;else {let s=Math.sign(dx); while(Math.abs(dx)>.2&&!collides(o.x+s*.25,o.y,o.r)){o.x+=s*.25;dx-=s*.25}} if(!collides(o.x,o.y+dy,o.r))o.y+=dy;else {let s=Math.sign(dy); while(Math.abs(dy)>.2&&!collides(o.x,o.y+s*.25,o.r)){o.y+=s*.25;dy-=s*.25}}}
+
+const floorThemes=[
+ {name:'DAMP CELLAR',wall:'#34436b',wallDark:'#222b4c',floorA:'#141c33',floorB:'#161f38',edge:'#4d6091'},
+ {name:'FREEZER DEPOT',wall:'#3a5c7b',wallDark:'#21364f',floorA:'#122237',floorB:'#142841',edge:'#71b7d1'},
+ {name:'VERDANT GROTTO',wall:'#39645b',wallDark:'#223e3d',floorA:'#132c2d',floorB:'#163333',edge:'#72bd8b'},
+ {name:'CANDY CATACOMBS',wall:'#633f70',wallDark:'#41294e',floorA:'#2a1937',floorB:'#301d40',edge:'#ca76c5'},
+ {name:'PANTRY CORE',wall:'#735041',wallDark:'#492f32',floorA:'#301d22',floorB:'#382126',edge:'#df9a62'}
+];
+const floorLayouts=[
+ // Floor 1: an old cellar with a forked route.
+ [{x:2,y:2,w:7,h:6},{x:12,y:2,w:7,h:5},{x:22,y:2,w:8,h:6},{x:4,y:11,w:8,h:5},{x:16,y:10,w:7,h:6},{x:26,y:11,w:4,h:5}],
+ // Floor 2: a wide, icy storage depot.
+ [{x:2,y:2,w:6,h:5},{x:11,y:2,w:7,h:5},{x:22,y:2,w:8,h:5},{x:3,y:10,w:6,h:6},{x:13,y:10,w:7,h:4},{x:23,y:10,w:7,h:6}],
+ // Floor 3: a greenhouse-shaped dungeon with a side entrance.
+ [{x:2,y:6,w:6,h:7},{x:3,y:2,w:5,h:3},{x:11,y:2,w:6,h:5},{x:21,y:2,w:7,h:5},{x:11,y:10,w:6,h:6},{x:21,y:10,w:7,h:6}],
+ // Floor 4: long candy halls split by a lower arcade.
+ [{x:2,y:2,w:6,h:6},{x:10,y:2,w:5,h:5},{x:18,y:2,w:5,h:6},{x:25,y:2,w:5,h:5},{x:4,y:11,w:7,h:5},{x:14,y:10,w:6,h:6},{x:25,y:11,w:5,h:5}],
+ // Floor 5: the compact, dangerous center of the pantry.
+ [{x:2,y:7,w:6,h:6},{x:10,y:3,w:6,h:5},{x:18,y:2,w:6,h:5},{x:25,y:4,w:5,h:6},{x:10,y:12,w:6,h:4},{x:19,y:11,w:6,h:5},{x:26,y:12,w:4,h:4}]
+];
+let rooms=[];
+function makeMap(){
+ let m=Array.from({length:ROWS},()=>Array(COLS).fill(1)),layout=floorLayouts[(game.floor-1)%floorLayouts.length];
+ game.theme=floorThemes[(game.floor-1)%floorThemes.length];rooms=layout.map(q=>({...q}));
+ for(const q of rooms)for(let y=q.y;y<q.y+q.h;y++)for(let x=q.x;x<q.x+q.w;x++)m[y][x]=0;
+ function corridor(a,b,verticalFirst=false){let x1=Math.floor(a.x+a.w/2),y1=Math.floor(a.y+a.h/2),x2=Math.floor(b.x+b.w/2),y2=Math.floor(b.y+b.h/2);if(verticalFirst){for(let y=Math.min(y1,y2);y<=Math.max(y1,y2);y++)m[y][x1]=0;for(let x=Math.min(x1,x2);x<=Math.max(x1,x2);x++)m[y2][x]=0}else{for(let x=Math.min(x1,x2);x<=Math.max(x1,x2);x++)m[y1][x]=0;for(let y=Math.min(y1,y2);y<=Math.max(y1,y2);y++)m[y][x2]=0}}
+ // Each layout uses a different route and at least one shortcut.
+ for(let i=1;i<rooms.length;i++)corridor(rooms[i-1],rooms[i],i%2===0);
+ if(rooms.length>5)corridor(rooms[0],rooms[Math.min(3,rooms.length-1)],true);
+ if(rooms.length>6)corridor(rooms[2],rooms[5],false);
+ return m;
+}
+function pointInRoom(room){return {x:(room.x+randi(1,room.w-2))*T+20,y:(room.y+randi(1,room.h-2))*T+20}}
+
+function resetFloor(){
+ game.map=makeMap();game.enemies=[];game.bullets=[];game.drops=[];game.crates=[];game.particles=[];game.decor=[];game.kills=0;game.collected=0; game.needProduce=2+game.floor;
+ let startRoom=rooms[0],exitRoom=rooms[rooms.length-1];game.exit={x:(exitRoom.x+Math.floor(exitRoom.w/2))*T+20,y:(exitRoom.y+Math.floor(exitRoom.h/2))*T+20,open:false};
+ game.player={x:(startRoom.x+Math.floor(startRoom.w/2))*T+20,y:(startRoom.y+Math.floor(startRoom.h/2))*T+20,r:12,hp:6,maxHp:6,inv:0,shoot:0,angle:0,walk:0};game.skill.cool=0;game.skill.flash=0;
+ let pool=rooms.slice(1,-1), n=4+game.floor*3;
+ for(let i=0;i<n;i++){let p=pointInRoom(pool[i%pool.length]);spawnEnemy(p.x,p.y,(i*3+game.floor*2)%14)}
+ let bossPoint=pointInRoom(pool[pool.length-1]),floorBoss=spawnBoss(bossPoint.x,bossPoint.y);
+ // Hiding spots can be opened with E nearby or destroyed by a player shot.
+ let crateRooms=rooms.slice(1,-1);
+ for(let i=0;i<game.needProduce;i++){let p=pointInRoom(crateRooms[i%crateRooms.length]);game.crates.push({x:p.x,y:p.y,r:15,open:false,kind:i%2?'fruit':'veg'});}
+ for(let i=0;i<72;i++){let p=pointInRoom(rooms[i%rooms.length]);game.decor.push({x:p.x,y:p.y,type:i%3});}
+ game.notice=`FLOOR ${game.floor}: ${game.theme.name} — BOSS: ${floorBoss.name}`;game.noticeT=3.2;game.state='playing';
+}
+function spawnEnemy(x,y,type){
+ const types=[
+  {name:'BURGER',hp:3,speed:48,r:15,color:'#f8aa4c',shoot:0,range:0},
+  {name:'SODA POP',hp:2,speed:34,r:13,color:'#85d9ff',shoot:rand(.3,1),range:330},
+  {name:'DONUT',hp:2,speed:70,r:13,color:'#f586b8',shoot:0,range:0},
+  {name:'PIZZA',hp:3,speed:42,r:15,color:'#ffc65a',shoot:rand(.7,1.5),range:250},
+  {name:'APPLE',hp:2,speed:66,r:13,color:'#f0575e',shoot:0,range:0},
+  {name:'CARROT',hp:2,speed:43,r:12,color:'#ff9c4e',shoot:rand(.4,1.2),range:305},
+  {name:'FRIES',hp:3,speed:76,r:14,color:'#ffd55b',shoot:0,range:0},
+  {name:'BROCCOLI',hp:5,speed:28,r:17,color:'#69bf72',shoot:rand(.6,1.4),range:260},
+  {name:'COLA CAN',hp:3,speed:38,r:13,color:'#ef5b5e',shoot:rand(.2,.9),range:360},
+  {name:'MILKSHAKE',hp:4,speed:31,r:15,color:'#f6a1c4',shoot:rand(.5,1.3),range:285},
+  {name:'HOT DOG',hp:3,speed:62,r:14,color:'#e77747',shoot:0,range:0},
+  {name:'TACO',hp:2,speed:82,r:13,color:'#f2bf55',shoot:0,range:0},
+  {name:'WATERMELON',hp:6,speed:24,r:18,color:'#f16870',shoot:0,range:0},
+  {name:'CORN COB',hp:3,speed:40,r:13,color:'#f6d857',shoot:rand(.3,1.1),range:335}
+ ]; let q=types[type]; game.enemies.push({x,y,r:q.r,type,hp:q.hp,maxHp:q.hp,speed:q.speed,color:q.color,cool:q.shoot,range:q.range,angle:0,hit:0,dead:0,dash:0,name:q.name});
+}
+function spawnBoss(x,y){
+ const bosses=[
+  {name:'BURGER BARON',color:'#f5a449'},
+  {name:'SODA SULTAN',color:'#70cfff'},
+  {name:'DONUT DREAD',color:'#f383b1'},
+  {name:'PIZZA TYRANT',color:'#ffc65a'},
+  {name:'THE JUNK LORD',color:'#b889ff'}
+ ];let q=bosses[(game.floor-1)%bosses.length],hp=15+game.floor*6;
+ let boss={x,y,r:27,type:-1,boss:true,bossStyle:game.floor-1,hp,maxHp:hp,speed:30+game.floor*3,color:q.color,cool:.9,range:500,angle:0,hit:0,dead:0,dash:0,name:q.name};game.enemies.push(boss);return boss;
+}
+function bossVolley(e){
+ let a=Math.atan2(game.player.y-e.y,game.player.x-e.x);for(let i=-1;i<=1;i++){let ang=a+i*.23;game.bullets.push({x:e.x+Math.cos(ang)*24,y:e.y+Math.sin(ang)*24,vx:Math.cos(ang)*225,vy:Math.sin(ang)*225,r:6,life:2.2,from:'e',dmg:1,color:palette.orange,bossShot:true});}
+ emit(e.x,e.y,palette.orange,7,75);sound('boss');
+}
+function emit(x,y,color,n=8,spd=90){for(let i=0;i<n;i++){let a=rand(0,Math.PI*2),v=rand(spd*.35,spd);game.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:rand(.22,.55),max:.55,color,size:randi(2,5)})}}
+function playerBullet(){
+ let p=game.player,w=game.weapon;if(p.shoot>0||game.state!=='playing')return;
+ let a=p.angle,shots=w.spread;p.shoot=.16/w.fireRate;
+ for(let i=0;i<shots;i++){let spread=(i-(shots-1)/2)*.13,ang=a+spread,ammo=healthyAmmo[(w.ammoIndex+i)%healthyAmmo.length];game.bullets.push({x:p.x+Math.cos(ang)*17,y:p.y+Math.sin(ang)*17,vx:Math.cos(ang)*470,vy:Math.sin(ang)*470,r:5,life:.85,from:'p',dmg:w.damage,color:ammoColors[ammo],ammo});}
+ w.ammoIndex=(w.ammoIndex+shots)%healthyAmmo.length;sound('shoot');emit(p.x+Math.cos(a)*14,p.y+Math.sin(a)*14,ammoColors[healthyAmmo[w.ammoIndex]],3+shots,45)
+}
+function useWeaponSpecial(){
+ let p=game.player,w=game.weapon;if(game.state!=='playing'||w.specialCool>0)return;
+ let a=p.angle;w.specialCool=w.specialMax;w.specialFlash=.28;p.inv=Math.max(p.inv,.22);game.shake=5;
+ // The equipped blaster condenses pantry energy into a rail shot: it pierces every junk-food target in its path.
+ game.bullets.push({x:p.x+Math.cos(a)*22,y:p.y+Math.sin(a)*22,vx:Math.cos(a)*720,vy:Math.sin(a)*720,r:8,life:1.15,from:'p',dmg:5+w.damage,color:ammoColors.goldenCarrot,ammo:'goldenCarrot',pierce:99,hitIds:new Set(),special:true});
+ emit(p.x+Math.cos(a)*20,p.y+Math.sin(a)*20,palette.gold,18,165);sound('rail');game.notice='GOLDEN CARROT RAIL! PIERCING WEAPON SPECIAL FIRED';game.noticeT=1.5;
+}
+function useSkill(){
+ let p=game.player,skill=game.skill;if(game.state!=='playing'||skill.cool>0)return;
+ skill.cool=skill.max;skill.flash=.46;p.inv=Math.max(p.inv,.46);game.shake=10;let hit=0;
+ for(const e of game.enemies)if(!e.dead&&dist(p,e)<128){e.hp-=3;e.hit=.28;hit++;emit(e.x,e.y,palette.gold,9,105);if(e.hp<=0)killEnemy(e);}
+ // The nova also pops nearby food crates and vaporizes incoming enemy shots.
+ for(const c of game.crates)if(!c.open&&dist(p,c)<128)openCrate(c);
+ game.bullets=game.bullets.filter(q=>q.from==='p'||dist(q,p)>145);
+ emit(p.x,p.y,palette.lime,30,230);sound('nova');game.notice=hit?`HARVEST NOVA! ${hit} JUNK FOOD BLASTED`:'HARVEST NOVA! PROJECTILES PURGED';game.noticeT=1.5;
+}
+const upgradeCatalog=[
+ {name:'PEPPERCORE',tag:'DAMAGE +1',detail:'Shots hit one extra time.',apply:()=>game.weapon.damage++},
+ {name:'WHISK MOTOR',tag:'FIRE RATE +35%',detail:'A faster trigger spin.',apply:()=>game.weapon.fireRate*=1.35},
+ {name:'FORK SPLITTER',tag:'ADD 2 SHOTS',detail:'Fire a wider triple spread.',apply:()=>game.weapon.spread=Math.min(5,game.weapon.spread+2)}
+];
+function makeUpgrades(){return upgradeCatalog.slice().sort(()=>Math.random()-.5)}
+function chooseUpgrade(index){
+ if(game.state!=='upgrade'||!game.upgradeOptions[index])return;let u=game.upgradeOptions[index];u.apply();game.weapon.level++;game.floor++;sound('upgrade');resetFloor();game.notice=`${u.name} INSTALLED — FLOOR ${game.floor}`;game.noticeT=3;
+}
+function enemyBullet(e){let a=Math.atan2(game.player.y-e.y,game.player.x-e.x); game.bullets.push({x:e.x+Math.cos(a)*15,y:e.y+Math.sin(a)*15,vx:Math.cos(a)*185,vy:Math.sin(a)*185,r:5,life:2.1,from:'e',dmg:1,color:e.color||palette.pink});sound('enemyShoot');}
+function hurtPlayer(d){let p=game.player;if(p.inv>0)return;p.hp-=d;p.inv=.72;game.shake=8;sound('hurt');emit(p.x,p.y,palette.pink,13,130); if(p.hp<=0){game.state='dead';game.notice='PANTRY RAID ENDED';game.noticeT=99;}}
+function killEnemy(e){e.dead=.35;game.kills++; game.score+=e.boss?150:15; sound(e.boss?'bossKill':'hit');emit(e.x,e.y,e.color,e.boss?35:17,e.boss?220:150); if(e.boss){game.drops.push({x:e.x,y:e.y,r:9,kind:'heart',life:12});game.notice=`${e.name} DEFEATED! +150 SCORE`;game.noticeT=2.3;}else if(Math.random()<.30)game.drops.push({x:e.x,y:e.y,r:9,kind:'heart',life:9});if(game.enemies.filter(z=>!z.dead).length<=1){sound('clear');game.notice='ALL JUNK FOOD CLEARED! FIND THE HIDDEN PRODUCE';game.noticeT=3}}
+function openCrate(c){if(c.open)return;c.open=true;game.drops.push({x:c.x,y:c.y,r:11,kind:c.kind,life:35,bob:0});sound('open');emit(c.x,c.y,palette.gold,11,100);game.notice='A SECRET SNACK STASH!';game.noticeT=1.3}
+function collect(d){let p=game.player;if(d.kind==='heart'){p.hp=Math.min(p.maxHp,p.hp+1);game.notice='+1 HEART';}else{game.collected++;game.score+=50;game.notice=`${d.kind==='veg'?'VEGETABLE':'FRUIT'} FOUND! ${game.collected}/${game.needProduce}`;if(game.collected>=game.needProduce) game.notice='ALL PRODUCE FOUND — EXIT IS READY!';}game.noticeT=2;d.life=0;sound('pickup');emit(d.x,d.y,d.kind==='veg'?'#88e385':'#ff7a65',13,95)}
+function hasCleared(){return game.enemies.every(e=>e.dead)}
+function canExit(){return hasCleared()&&game.collected>=game.needProduce}
+function advanceFloor(){ if(!canExit())return; if(game.floor>=game.maxFloor){game.state='win';game.notice='THE PANTRY IS SAVED!';game.noticeT=99;game.score+=200;saveScore();sound('win');} else {game.state='upgrade';game.upgradeOptions=makeUpgrades();game.notice='CHOOSE A WEAPON UPGRADE';game.noticeT=99;sound('clear');} }
+
+function update(dt){
+ game.time+=dt;game.shake=Math.max(0,game.shake-dt*32);if(game.noticeT>0)game.noticeT-=dt;
+ if(game.state!=='playing'){updateParticles(dt);return}
+ let p=game.player;p.inv=Math.max(0,p.inv-dt);p.shoot=Math.max(0,p.shoot-dt);game.skill.cool=Math.max(0,game.skill.cool-dt);game.skill.flash=Math.max(0,game.skill.flash-dt);game.weapon.specialCool=Math.max(0,game.weapon.specialCool-dt);game.weapon.specialFlash=Math.max(0,game.weapon.specialFlash-dt);
+ const b=C.getBoundingClientRect(); // mouse already translated by event; angle remains canvas coords.
+ p.angle=Math.atan2(mouse.y-p.y,mouse.x-p.x);
+ let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
+ if(dx||dy){let L=Math.hypot(dx,dy);dx/=L;dy/=L;moveBody(p,dx*172*dt,dy*172*dt);p.walk+=dt*12;}
+ if(mouse.down)playerBullet();
+ if(keys.q){keys.q=false;useSkill();}
+ if(keys.r){keys.r=false;useWeaponSpecial();}
+ if(keys.e){keys.e=false;for(const c of game.crates)if(!c.open&&dist(p,c)<53)openCrate(c);}
+ for(const c of game.crates)if(!c.open&&dist(p,c)<p.r+c.r+3&&keys.e)openCrate(c);
+ for(let i=game.bullets.length-1;i>=0;i--){let q=game.bullets[i];q.x+=q.vx*dt;q.y+=q.vy*dt;q.life-=dt;if(q.life<=0||wallAt(q.x,q.y)){game.bullets.splice(i,1);continue}
+  if(q.from==='p'){
+   let broke=false;for(const c of game.crates)if(!c.open&&dist(q,c)<c.r+q.r){openCrate(c);if(!q.pierce){q.life=0;broke=true;break}}if(broke)continue;
+   for(const e of game.enemies)if(!e.dead&&dist(q,e)<e.r+q.r){if(q.pierce&&q.hitIds.has(e))continue;e.hp-=q.dmg;e.hit=.14;if(q.pierce){q.hitIds.add(e);q.pierce--}else q.life=0;emit(q.x,q.y,q.special?palette.gold:palette.lime,q.special?11:5,q.special?115:65);sound('hit');if(e.hp<=0)killEnemy(e);if(q.pierce<=0)q.life=0;break}
+  } else if(dist(q,p)<p.r+q.r){hurtPlayer(q.dmg);q.life=0}
+ }
+ game.bullets=game.bullets.filter(q=>q.life>0);
+ for(const e of game.enemies){if(e.dead){e.dead-=dt;continue}e.hit=Math.max(0,e.hit-dt);let dd=dist(e,p),a=Math.atan2(p.y-e.y,p.x-e.x);e.angle=a;
+  if((e.type===2||e.type===11)&&dd<190&&e.dash<=0&&Math.random()<dt*.75){e.dash=.32;e.vx=Math.cos(a)*225;e.vy=Math.sin(a)*225;sound('dash')}
+  if(e.dash>0){e.dash-=dt;moveBody(e,e.vx*dt,e.vy*dt)}else if(dd>e.r+p.r+(e.boss?18:7)){moveBody(e,Math.cos(a)*e.speed*dt,Math.sin(a)*e.speed*dt)}
+  if(dd<e.r+p.r+4)hurtPlayer(1);
+  if(e.boss){e.cool-=dt;if(e.cool<=0&&dd<e.range){bossVolley(e);e.cool=Math.max(.72,1.24-game.floor*.07)}}
+  else if(e.range){e.cool-=dt;if(e.cool<=0&&dd<e.range){enemyBullet(e);e.cool=e.type===1?1.5:e.type===8?1.0:e.type===9?1.45:e.type===13?.92:1.15}}
+ }
+ game.enemies=game.enemies.filter(e=>e.dead>=0);
+ for(const d of game.drops){d.life-=dt;d.bob=(d.bob||0)+dt*4;if(d.life>0&&dist(d,p)<p.r+d.r+6)collect(d)}game.drops=game.drops.filter(d=>d.life>0);
+ game.exit.open=canExit();if(game.exit.open&&dist(p,game.exit)<30)advanceFloor();
+ updateParticles(dt);
+}
+function updateParticles(dt){for(const q of game.particles){q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=.91;q.vy*=.91;q.life-=dt}game.particles=game.particles.filter(q=>q.life>0)}
+
+function px(x,y,w,h,c){rect(x,y,w,h,c)}
+function drawFloor(){
+ let theme=game.theme||floorThemes[0];rect(0,0,W,H,theme.floorA);
+ for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+  if(game.map[y][x]){px(x*T,y*T,T,T,theme.wallDark);px(x*T+3,y*T+3,T-6,T-6,theme.wall);px(x*T+6,y*T+6,T-12,4,theme.edge);px(x*T+6,y*T+30,T-12,4,shade(theme.wallDark,12));}
+  else {px(x*T,y*T,T,T,(x+y)%2?theme.floorA:theme.floorB);px(x*T,y*T,T,1,shade(theme.wallDark,15));px(x*T,y*T,1,T,shade(theme.wallDark,15));}
+ }
+ for(const d of game.decor){ if(!wallAt(d.x,d.y)){let c=d.type===0?shade(theme.wall, -12):d.type===1?shade(theme.wallDark,20):shade(theme.floorB,16);px(d.x-2,d.y-2,4,4,c)} }
+}
+function drawCrate(c){let x=c.x,y=c.y;if(c.open){px(x-16,y+10,32,5,'#80513c');px(x-13,y+6,7,5,'#b7804f');px(x+7,y+5,6,5,'#b7804f');return}px(x-15,y-13,30,28,'#724935');px(x-12,y-10,24,22,'#bd7c4b');px(x-14,y-2,28,4,'#81503a');px(x-2,y-11,4,24,'#845039');px(x-11,y-8,4,4,'#e7ad61');}
+function drawProduce(d){let x=d.x,y=d.y+Math.sin(d.bob)*3;let blink=d.life<3&&Math.floor(d.life*8)%2===0;if(blink)return;if(d.kind==='heart'){px(x-7,y-6,6,7,palette.pink);px(x+1,y-6,6,7,palette.pink);px(x-5,y,10,8,palette.pink);px(x-3,y+7,6,4,palette.pink);return}if(d.kind==='veg'){px(x-8,y-4,16,14,'#69c767');px(x-5,y-10,5,7,'#b4f083');px(x+1,y-10,5,7,'#b4f083');px(x-5,y,4,4,'#a5e88c');}else{px(x-8,y-5,16,15,'#f66d54');px(x-5,y-9,10,5,'#65b96c');px(x-2,y-13,4,5,'#8ad57b');px(x-4,y+1,4,5,'#f9a354');}}
+function drawEnemy(e){let x=e.x,y=e.y,flash=e.hit>0?'#ffffff':e.color;
+ if(e.boss){
+  // Oversized original boss sprite, with a crown and a different accent per floor.
+  px(x-30,y+21,60,6,'#0b1020');px(x-28,y-17,56,37,flash);px(x-24,y-22,48,8,shade(e.color,28));px(x-25,y+12,50,8,shade(e.color,-36));
+  if(e.bossStyle===0){px(x-31,y-6,62,7,'#61362d');px(x-26,y+1,52,5,'#79bf67');px(x-19,y-11,5,4,'#fff0bb');px(x+14,y-11,5,4,'#fff0bb');}
+  else if(e.bossStyle===1){px(x-18,y-31,36,8,'#d9efff');px(x-7,y-38,9,8,palette.pink);px(x-17,y-5,34,4,'#ffffff');}
+  else if(e.bossStyle===2){px(x-15,y-8,30,20,'#743c64');px(x-21,y-25,42,6,'#eeb169');px(x-18,y-9,6,6,'#ffdf78');px(x+10,y+3,6,6,'#87dcff');}
+  else if(e.bossStyle===3){ctx.save();ctx.translate(x,y);ctx.rotate(e.angle+.8);ctx.beginPath();ctx.moveTo(-31,-24);ctx.lineTo(34,0);ctx.lineTo(-31,24);ctx.closePath();ctx.fillStyle=flash;ctx.fill();ctx.restore();px(x-31,y-25,7,50,'#d47b3f');px(x-8,y-10,9,9,palette.red);px(x+8,y+4,8,8,palette.red);}
+  else {px(x-21,y-21,42,42,'#a16cec');px(x-14,y-12,8,8,palette.gold);px(x+6,y-12,8,8,palette.gold);px(x-11,y+7,22,5,'#38234e');}
+  // Crown and eyes turn every food monster into a floor guardian.
+  px(x-18,y-30,36,6,palette.gold);px(x-16,y-38,7,10,palette.gold);px(x-3,y-43,7,15,palette.gold);px(x+10,y-38,7,10,palette.gold);px(x-14,y-6,7,6,'#18233e');px(x+8,y-6,7,6,'#18233e');
+  return;
+ }
+ ctx.save();ctx.translate(x,y);ctx.rotate(e.type===3?e.angle+.8:0);
+ if(e.type===0){ // burger
+  px(-15,-9,30,6,'#e49742');px(-12,-13,24,5,'#ffd66b');px(-16,-3,32,6,'#5d352c');px(-14,3,28,4,'#7acb66');px(-15,7,30,6,'#d97d36');px(-13,-7,3,2,'#fff0bb');px(6,-7,3,2,'#fff0bb');
+ } else if(e.type===1){ // soda
+  px(-10,-14,20,28,'#438fd0');px(-12,-10,24,19,flash);px(-8,-18,16,5,'#d9eaff');px(-5,-22,6,5,'#ff6f9f');px(-6,-3,12,3,'#ffffff');
+ } else if(e.type===2){ // donut
+  px(-14,-12,28,24,flash);px(-10,-16,20,4,'#edb268');px(-5,-5,10,10,'#7f4765');px(-9,-8,4,4,'#fff0a6');px(6,-4,3,3,'#8acbff');px(1,6,3,3,'#a8f5cb');
+ } else if(e.type===3) { // pizza
+  ctx.beginPath();ctx.moveTo(-15,-13);ctx.lineTo(16,0);ctx.lineTo(-15,13);ctx.closePath();ctx.fillStyle=flash;ctx.fill();px(-16,-14,5,28,'#d47b3f');px(-5,-7,6,6,'#d94f48');px(2,3,6,6,'#d94f48');
+ } else if(e.type===4) { // apple
+  px(-13,-10,26,23,flash);px(-9,-14,18,5,'#f77969');px(-4,-19,7,7,'#704a3b');px(2,-21,9,5,'#6fc571');px(-8,-4,4,5,'#ffe3b1');px(5,-4,3,4,'#ffe3b1');
+ } else if(e.type===5) { // carrot
+  ctx.beginPath();ctx.moveTo(-11,-7);ctx.lineTo(12,-7);ctx.lineTo(3,16);ctx.closePath();ctx.fillStyle=flash;ctx.fill();px(-10,-15,5,9,'#75c773');px(-2,-19,5,13,'#a8e887');px(6,-15,5,9,'#75c773');px(-3,-2,4,3,'#f7c266');
+ } else if(e.type===6) { // fries
+  px(-12,-15,6,20,'#ffe167');px(-4,-19,6,24,'#ffd254');px(4,-16,6,21,'#fff08c');px(-15,-4,30,19,'#e6574d');px(-11,1,22,8,'#f06d53');px(-7,-1,4,4,'#fff4c9');px(5,-1,4,4,'#fff4c9');
+ } else if(e.type===7) { // broccoli
+  px(-11,-1,22,18,'#5da967');px(-17,-12,13,14,flash);px(-7,-18,15,19,flash);px(3,-13,14,15,flash);px(-10,3,4,4,'#b3e182');px(6,3,4,4,'#b3e182');
+ } else if(e.type===8) { // cola can
+  px(-10,-16,20,31,'#bd424b');px(-12,-10,24,20,flash);px(-8,-20,16,6,'#e8f5ff');px(-4,-24,7,5,'#e96061');px(-7,-4,14,4,'#fff4ce');px(-5,4,10,4,'#d3434c');
+ } else if(e.type===9) { // milkshake
+  px(-12,-10,24,25,flash);px(-9,-15,18,7,'#fff1db');px(-3,-26,5,13,'#6c9fe4');px(2,-26,7,4,'#ff8db8');px(-9,15,18,3,'#e86c9b');px(-6,-3,4,4,'#3c3c61');px(4,-3,4,4,'#3c3c61');
+ } else if(e.type===10) { // hot dog
+  px(-17,-9,34,19,'#df9a54');px(-13,-6,26,13,flash);px(-11,-2,22,4,'#eecc57');px(-8,-1,4,4,'#4c854d');px(5,-1,4,4,'#4c854d');
+ } else if(e.type===11) { // taco
+  ctx.beginPath();ctx.moveTo(-16,12);ctx.lineTo(0,-16);ctx.lineTo(17,12);ctx.closePath();ctx.fillStyle=flash;ctx.fill();px(-15,8,30,7,'#d99040');px(-9,3,6,5,'#79c26c');px(4,2,6,5,'#e75551');
+ } else if(e.type===12) { // watermelon
+  px(-18,-9,36,23,'#3d9b62');px(-15,-13,30,23,flash);px(-12,-9,24,16,'#ff8580');px(-8,-5,3,4,'#352f44');px(0,-5,3,4,'#352f44');px(7,-5,3,4,'#352f44');
+ } else { // corn cob
+  px(-10,-15,20,31,'#f3cb49');px(-13,-8,6,21,'#61ad68');px(7,-8,6,21,'#61ad68');px(-6,-9,4,4,'#fff0a3');px(2,-9,4,4,'#fff0a3');px(-6,1,4,4,'#fff0a3');px(2,1,4,4,'#fff0a3');
+ }ctx.restore();
+ // HP pip
+ if(!e.boss&&e.hp<e.maxHp){rect(x-14,y-e.r-10,28,4,'#461f35');rect(x-14,y-e.r-10,28*e.hp/e.maxHp,4,palette.lime)}
+}
+function drawPlayer(){let p=game.player;if(!p)return;let flash=p.inv>0&&Math.floor(p.inv*14)%2===0;if(flash)return;let x=p.x,y=p.y,a=p.angle; // shadow, tiny adventurer + blaster
+ px(x-12,y+11,24,5,'#0b1020');px(x-10,y-14,20,25,'#5b7fca');px(x-13,y-9,26,16,'#6f96e7');px(x-8,y-19,16,9,'#ffe0ae');px(x-5,y-16,10,3,'#6c4660');px(x-7,y-5,4,4,'#27345b');px(x+4,y-5,4,4,'#27345b');ctx.save();ctx.translate(x,y);ctx.rotate(a);px(7,-4,20,8,'#a8f5cb');px(17,-2,7,4,'#fff2c7');ctx.restore();}
+function drawSkillNova(){let s=game.skill,p=game.player;if(!p||s.flash<=0)return;let progress=1-s.flash/.46,rad=18+progress*138;ctx.save();ctx.globalAlpha=Math.max(.08,s.flash/.46);ctx.strokeStyle=palette.lime;ctx.lineWidth=6;ctx.beginPath();ctx.arc(p.x,p.y,rad,0,Math.PI*2);ctx.stroke();ctx.strokeStyle=palette.gold;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,rad+9,0,Math.PI*2);ctx.stroke();ctx.restore();}
+function drawExit(){let e=game.exit;if(!e)return;let c=e.open?palette.lime:'#5a4966';px(e.x-17,e.y-20,34,40,'#1d2540');px(e.x-14,e.y-17,28,34,c);px(e.x-9,e.y-12,18,27,e.open?'#244e59':'#382e45');px(e.x-3,e.y-6,6,6,e.open?palette.gold:'#8d7180');if(e.open){px(e.x-13,e.y-21,26,3,'#d9fff3');text('GO!',e.x,e.y-29,10,palette.lime,'center')} }
+function drawHud(){let p=game.player,w=game.weapon,s=game.skill; // top panel
+ rect(14,13,402,97,'#0c1123');rect(18,17,394,89,'#1b2541');text('PANTRY DELVE',30,31,16,palette.gold);text(`F${game.floor}/${game.maxFloor} · ${game.theme?game.theme.name:'DUNGEON'}`,399,31,10,palette.lime,'right');
+ text('HP',30,54,11,'#aebae6');for(let i=0;i<p.maxHp;i++){let c=i<p.hp?palette.pink:'#3d4665';px(60+i*20,48,14,12,c);px(63+i*20,45,8,4,c);}
+ text(`JUNK ${game.kills}/${game.kills+game.enemies.filter(e=>!e.dead).length}`,195,54,11,palette.cream);text(`PRODUCE ${game.collected}/${game.needProduce}`,195,70,11,game.collected>=game.needProduce?palette.lime:palette.gold);
+ text(`WEAPON LV.${w.level}  DMG ${w.damage}  x${w.spread}`,300,54,10,palette.gold);text(`RATE ${w.fireRate.toFixed(2)}x`,300,70,10,palette.blue);
+ // Active skill cooldown bar.
+ text('Q  HARVEST NOVA',30,76,10,s.cool<=0?palette.lime:'#aebae6');rect(149,72,108,7,'#3d4665');rect(149,72,108*(1-s.cool/s.max),7,s.cool<=0?palette.lime:palette.gold);text(s.cool<=0?'READY':`${s.cool.toFixed(1)}s`,266,76,10,s.cool<=0?palette.lime:palette.cream);
+ text('R  SPICE RAIL',30,94,10,w.specialCool<=0?palette.gold:'#aebae6');rect(149,90,108,7,'#3d4665');rect(149,90,108*(1-w.specialCool/w.specialMax),7,w.specialCool<=0?palette.gold:palette.orange);text(w.specialCool<=0?'READY':`${w.specialCool.toFixed(1)}s`,266,94,10,w.specialCool<=0?palette.gold:palette.cream);text('FRESH AMMO',398,94,9,palette.lime,'right');
+ // objective card
+ rect(W-280,14,266,58,'#0c1123');rect(W-276,18,258,50,'#1b2541');let all=hasCleared();text(all?'✓ JUNK FOOD CLEARED':'✕ CLEAR THE JUNK FOOD',W-264,35,12,all?palette.lime:palette.cream);text(game.collected>=game.needProduce?'✓ PRODUCE SECURED':'? OPEN CRATES FOR PRODUCE',W-264,54,12,game.collected>=game.needProduce?palette.lime:palette.gold);
+ drawBossBar();
+ if(game.noticeT>0){let alpha=Math.min(1,game.noticeT*2);ctx.globalAlpha=alpha;rect(W/2-235,116,470,31,'#0b1020');text(game.notice,W/2,132,14,palette.cream,'center');ctx.globalAlpha=1;}
+}
+function drawBossBar(){
+ let boss=game.enemies.find(e=>e.boss&&!e.dead);if(!boss)return;let x=W/2-190,y=14,w=380;
+ rect(x,y,w,28,'#0c1123');rect(x+4,y+4,w-8,20,'#2b1e37');text(`FLOOR BOSS · ${boss.name}`,x+10,y+10,10,palette.orange);text(`${Math.max(0,Math.ceil(boss.hp))}/${boss.maxHp}`,x+w-10,y+10,10,palette.cream,'right');rect(x+10,y+17,w-20,4,'#53253e');rect(x+10,y+17,(w-20)*Math.max(0,boss.hp)/boss.maxHp,4,palette.pink);
+}
+function drawLeaderboard(x,y,w=330){
+ let rows=game.leaderboard.slice(0,4),h=rows.length?42+rows.length*21:92;rect(x,y,w,h,'#0c1123');rect(x+4,y+4,w-8,h-8,'#1b2541');text('TOP PLAYERS',x+14,y+18,14,palette.gold);text('LOCAL HALL OF FAME',x+w-14,y+18,9,'#aebae6','right');
+ if(!rows.length){text('No completed runs yet.',x+w/2,y+50,11,palette.cream,'center');text('Finish Floor 5 to claim the top spot!',x+w/2,y+70,10,palette.lime,'center');return}
+ rows.forEach((row,i)=>{let yy=y+42+i*21;text(`#${i+1}`,x+14,yy,11,i===0?palette.gold:'#b5c4ec');text(row.name,x+48,yy,11,palette.cream);text(String(row.score).padStart(4,'0'),x+w-14,yy,11,i===0?palette.lime:palette.cream,'right')});
+}
+function drawOverlay(){if(game.state==='playing')return;rect(0,0,W,H,'rgba(5,7,16,.75)');
+ if(game.state==='title'){text('PANTRY DELVE',W/2,130,46,palette.gold,'center');text('THE DUNGEON HAS A JUNK-FOOD PROBLEM.',W/2,174,15,palette.cream,'center');rect(W/2-250,201,500,165,'#131c35');rect(W/2-246,205,492,157,'#202d50');text('FACE 14 FOOD & VEGETABLE ENEMY TYPES.',W/2,235,14,palette.pink,'center');text('HIDDEN FRUIT & VEGETABLES ARE YOUR FRESH AMMO.',W/2,266,12,palette.lime,'center');text('DEFEAT EVERY FLOOR BOSS TO UNLOCK THE EXIT.',W/2,293,13,palette.gold,'center');text('Q  HARVEST NOVA: BLAST FOES, CRATES & ENEMY SHOTS.',W/2,313,11,palette.blue,'center');text('R  SPICE RAIL: A PIERCING WEAPON SPECIAL.',W/2,333,11,palette.gold,'center');text('WASD / ARROWS  MOVE     MOUSE  AIM & FIRE     E  OPEN CRATE',W/2,351,11,'#b5c4ec','center');drawLeaderboard(W/2-165,385,330);text('CREATED BY JADE RUPIN',W/2,535,12,palette.gold,'center');text('CLICK OR PRESS ENTER TO START',W/2,568,17,palette.cream,'center');}
+ else if(game.state==='upgrade'){text('FLOOR CLEARED',W/2,174,36,palette.lime,'center');text('CHOOSE ONE WEAPON UPGRADE',W/2,211,16,palette.cream,'center');for(let i=0;i<game.upgradeOptions.length;i++){let u=game.upgradeOptions[i],x=W/2-345+i*235,y=258;rect(x,y,215,177,'#101933');rect(x+4,y+4,207,169,i===0?'#394d7d':'#263557');text(`${i+1}`,x+18,y+21,14,palette.gold,'center');text(u.name,x+107,y+55,16,palette.gold,'center');text(u.tag,x+107,y+86,13,palette.lime,'center');text(u.detail,x+107,y+115,11,palette.cream,'center');text(`PRESS ${i+1} / CLICK`,x+107,y+151,10,'#b5c4ec','center');}}
+ else if(game.state==='dead'){text('YOU GOT SERVED.',W/2,282,36,palette.pink,'center');text(`JUNK PURGED: ${game.kills}    SCORE: ${game.score}`,W/2,326,15,palette.cream,'center');text('CREATED BY JADE RUPIN',W/2,365,11,palette.gold,'center');text('PRESS ENTER OR CLICK TO RAID AGAIN',W/2,397,14,palette.gold,'center');}
+ else if(game.state==='win'){text('PANTRY SAVED!',W/2,185,42,palette.lime,'center');text('Every greasy invader is gone. Every fresh snack is safe.',W/2,230,15,palette.cream,'center');text(`FINAL SCORE: ${game.score}`,W/2,263,19,palette.gold,'center');drawLeaderboard(W/2-165,290,330);text('CREATED BY JADE RUPIN',W/2,445,12,palette.gold,'center');text('PRESS ENTER OR CLICK FOR A NEW RUN',W/2,481,14,palette.cream,'center');}
+}
+function drawProjectile(q){
+ let x=q.x,y=q.y;
+ if(q.from!=='p'){px(x-q.r,y-q.r,q.r*2,q.r*2,q.color);px(x-q.r/2,y-q.r/2,q.r,q.r,'#fff9d5');return}
+ if(q.special){ctx.globalAlpha=.28;px(x-q.r-6,y-q.r-6,(q.r+6)*2,(q.r+6)*2,palette.gold);ctx.globalAlpha=1;px(x-7,y-6,14,12,ammoColors.goldenCarrot);px(x-5,y-11,5,7,'#a9e47d');px(x+1,y-11,5,7,'#a9e47d');px(x-2,y-2,4,4,'#fff4b0');return}
+ if(q.ammo==='pea'){px(x-5,y-5,10,10,ammoColors.pea);px(x-2,y-6,5,3,'#bdf49a');px(x-2,y-1,3,3,'#eaffc8');}
+ else if(q.ammo==='carrot'){px(x-5,y-5,10,12,ammoColors.carrot);px(x-3,y-10,3,5,'#93dc77');px(x+1,y-10,3,5,'#93dc77');px(x-2,y-1,3,3,'#ffe08b');}
+ else if(q.ammo==='berry'){px(x-6,y-5,5,8,ammoColors.berry);px(x,y-6,6,9,ammoColors.berry);px(x-2,y-9,5,4,'#8edb84');px(x-2,y-1,3,3,'#f5dcff');}
+ else {px(x-6,y-5,12,11,ammoColors.apple);px(x-3,y-9,5,5,'#6fbd70');px(x-2,y-2,3,3,'#ffe6b3');}
+}
+function render(){let sx=game.shake?rand(-game.shake,game.shake):0,sy=game.shake?rand(-game.shake,game.shake):0;ctx.save();ctx.translate(sx,sy);drawFloor();drawExit();for(const c of game.crates)drawCrate(c);for(const d of game.drops)drawProduce(d);for(const e of game.enemies)if(!e.dead||e.dead>0)drawEnemy(e);for(const q of game.bullets)drawProjectile(q);for(const q of game.particles){ctx.globalAlpha=Math.max(0,q.life/q.max);px(q.x-q.size/2,q.y-q.size/2,q.size,q.size,q.color)}ctx.globalAlpha=1;drawPlayer();drawSkillNova();ctx.restore();if(game.player)drawHud();drawOverlay();}
+let last=performance.now();function loop(now){let dt=Math.min(.033,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(loop)}
+function start(){sound('start');game.floor=1;game.score=0;game.scoreSaved=false;game.weapon={level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0};game.skill={cool:0,max:7,flash:0};game.upgradeOptions=[];resetFloor()}
+function canvasPoint(ev){let r=C.getBoundingClientRect();return {x:(ev.clientX-r.left)*W/r.width,y:(ev.clientY-r.top)*H/r.height}}
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();keys[k]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' ','enter'].includes(k))e.preventDefault();if(k==='enter'&&(game.state==='title'||game.state==='dead'||game.state==='win'))start();if(game.state==='upgrade'&&['1','2','3'].includes(k))chooseUpgrade(Number(k)-1);});
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+C.addEventListener('mousemove',e=>Object.assign(mouse,canvasPoint(e)));C.addEventListener('mousedown',e=>{Object.assign(mouse,canvasPoint(e));mouse.down=true;if(game.state==='title'||game.state==='dead'||game.state==='win')start();else if(game.state==='upgrade'){let i=Math.floor((mouse.x-(W/2-345))/235);if(mouse.y>=258&&mouse.y<=435&&i>=0&&i<3&&mouse.x>=W/2-345+i*235&&mouse.x<=W/2-130+i*235)chooseUpgrade(i);}});window.addEventListener('mouseup',()=>mouse.down=false);C.addEventListener('contextmenu',e=>e.preventDefault());
+// Draw a dungeon behind the title immediately.
+game.leaderboard=loadScores();game.map=makeMap();let previewStart=rooms[0],previewExit=rooms[rooms.length-1];game.player={x:(previewStart.x+Math.floor(previewStart.w/2))*T+20,y:(previewStart.y+Math.floor(previewStart.h/2))*T+20,r:12,hp:6,maxHp:6};game.exit={x:(previewExit.x+Math.floor(previewExit.w/2))*T+20,y:(previewExit.y+Math.floor(previewExit.h/2))*T+20,open:false};requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
