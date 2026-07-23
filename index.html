@@ -25,16 +25,18 @@
   #deviceChoice button:active { transform:translate(1px,1px); box-shadow:1px 1px #080b17; }
   #touchControls { display:none; position:absolute; inset:0; z-index:8; pointer-events:none; touch-action:none; }
   #touchControls.active { display:block; }
-  .touch-pad { position:absolute; left:18px; bottom:19px; display:grid; grid-template-columns:repeat(3,54px); grid-template-rows:repeat(3,54px); gap:4px; }
-  .touch-actions { position:absolute; right:18px; bottom:20px; display:grid; grid-template-columns:60px 60px; grid-template-rows:54px 54px; gap:7px; }
-  .touch-btn { pointer-events:auto; touch-action:none; user-select:none; -webkit-user-select:none; border:2px solid #a9bce9; border-radius:10px; background:rgba(18,29,57,.88); color:#fff2c7; box-shadow:2px 3px 0 #080b17; font:700 13px ui-monospace,SFMono-Regular,Consolas,monospace; }
+  .virtual-stick { position:absolute; bottom:18px; width:128px; height:128px; border:3px solid rgba(168,245,203,.72); border-radius:50%; background:radial-gradient(circle,rgba(36,83,87,.55),rgba(8,19,40,.76)); box-shadow:inset 0 0 0 9px rgba(166,232,240,.08),2px 3px 0 #080b17; pointer-events:auto; touch-action:none; user-select:none; -webkit-user-select:none; }
+  .virtual-stick.move-stick { left:18px; border-color:rgba(168,245,203,.78); }
+  .virtual-stick.aim-stick { right:18px; border-color:rgba(255,200,87,.82); background:radial-gradient(circle,rgba(100,71,37,.52),rgba(27,20,42,.8)); }
+  .stick-knob { position:absolute; left:50%; top:50%; width:55px; height:55px; border:3px solid #e8fff3; border-radius:50%; background:rgba(93,176,163,.8); transform:translate(-50%,-50%); box-shadow:0 2px 0 #10283b; pointer-events:none; }
+  .aim-stick .stick-knob { border-color:#fff0bd; background:rgba(232,157,63,.83); }
+  .stick-label { position:absolute; left:0; right:0; bottom:10px; text-align:center; color:#dffdf1; font-size:10px; letter-spacing:.08em; pointer-events:none; text-shadow:1px 1px #07111f; }
+  .aim-stick .stick-label { color:#fff0bd; }
+  .touch-actions { position:absolute; right:156px; bottom:19px; display:grid; grid-template-columns:52px 52px; grid-template-rows:48px 48px; gap:6px; }
+  .touch-btn { pointer-events:auto; touch-action:none; user-select:none; -webkit-user-select:none; border:2px solid #a9bce9; border-radius:10px; background:rgba(18,29,57,.9); color:#fff2c7; box-shadow:2px 3px 0 #080b17; font:700 10px ui-monospace,SFMono-Regular,Consolas,monospace; }
   .touch-btn:active, .touch-btn.pressed { transform:translate(1px,2px); background:#3d568b; box-shadow:1px 1px 0 #080b17; }
-  .touch-btn.fire { grid-row:span 2; border-color:#a8f5cb; background:rgba(35,91,79,.9); font-size:15px; }
-  .touch-btn.nova { border-color:#a8f5cb; color:#a8f5cb; }
-  .touch-btn.rail { border-color:#ffc857; color:#ffc857; }
-  .touch-btn.open { color:#ffcf8a; }
-  .pad-up { grid-column:2; grid-row:1; } .pad-left { grid-column:1; grid-row:2; } .pad-down { grid-column:2; grid-row:3; } .pad-right { grid-column:3; grid-row:2; }
-  @media (max-width:600px) { .touch-pad { left:10px; bottom:14px; grid-template-columns:repeat(3,47px); grid-template-rows:repeat(3,47px); gap:3px; } .touch-actions { right:10px; bottom:16px; grid-template-columns:54px 54px; grid-template-rows:48px 48px; gap:5px; } .touch-btn { font-size:11px; } .touch-btn.fire { font-size:13px; } #caption { display:none; } }
+  .touch-btn.nova { border-color:#a8f5cb; color:#a8f5cb; }.touch-btn.rail { border-color:#ffc857; color:#ffc857; }.touch-btn.open { color:#ffcf8a; }
+  @media (max-width:600px) { .virtual-stick { width:108px; height:108px; bottom:12px; }.virtual-stick.move-stick { left:10px; }.virtual-stick.aim-stick { right:10px; }.stick-knob { width:47px; height:47px; }.stick-label { bottom:8px; font-size:8px; }.touch-actions { right:124px; bottom:14px; grid-template-columns:42px 42px; grid-template-rows:42px 42px; gap:4px; }.touch-btn { font-size:8px; } #caption { display:none; } }
   @media(max-aspect-ratio: 16/9) { #shell { width:100vw; height:auto; } }
 </style>
 </head>
@@ -47,18 +49,13 @@
     <input id="playerNameInput" type="text" maxlength="14" autocomplete="nickname" placeholder="YOUR NAME" aria-label="Player name" />
     <div class="choice-row">
       <button type="button" data-mode="pc">PC · KEYBOARD + MOUSE</button>
-      <button type="button" class="mobile-choice" data-mode="mobile">MOBILE · TOUCH BUTTONS</button>
+      <button type="button" class="mobile-choice" data-mode="mobile">MOBILE · DUAL JOYSTICKS</button>
     </div>
   </div>
-  <div id="touchControls" aria-label="Mobile game controls">
-    <div class="touch-pad" aria-label="Movement controls">
-      <button class="touch-btn pad-up" data-hold="arrowup" aria-label="Move up">▲</button>
-      <button class="touch-btn pad-left" data-hold="arrowleft" aria-label="Move left">◀</button>
-      <button class="touch-btn pad-down" data-hold="arrowdown" aria-label="Move down">▼</button>
-      <button class="touch-btn pad-right" data-hold="arrowright" aria-label="Move right">▶</button>
-    </div>
-    <div class="touch-actions" aria-label="Action controls">
-      <button class="touch-btn fire" id="touchFire" aria-label="Auto aim and fire">FIRE</button>
+  <div id="touchControls" aria-label="Mobile dual-joystick controls">
+    <div class="virtual-stick move-stick" id="moveStick" aria-label="Movement joystick"><div class="stick-knob"></div><span class="stick-label">MOVE</span></div>
+    <div class="virtual-stick aim-stick" id="aimStick" aria-label="Aim and fire joystick"><div class="stick-knob"></div><span class="stick-label">AIM / FIRE</span></div>
+    <div class="touch-actions" aria-label="Special action controls">
       <button class="touch-btn nova" data-tap="q" aria-label="Harvest Nova">NOVA</button>
       <button class="touch-btn rail" data-tap="r" aria-label="Golden Carrot Rail">RAIL</button>
       <button class="touch-btn open" data-tap="e" aria-label="Open crate">OPEN</button>
@@ -71,7 +68,7 @@
 const C = document.getElementById('game'), ctx = C.getContext('2d'), touchControls=document.getElementById('touchControls'), deviceChoice=document.getElementById('deviceChoice'), playerNameInput=document.getElementById('playerNameInput');
 ctx.imageSmoothingEnabled = false;
 const W=C.width,H=C.height,T=40, COLS=32, ROWS=18;
-const keys={}, mouse={x:W/2,y:H/2,down:false};let mobileFire=false;
+const keys={}, mouse={x:W/2,y:H/2,down:false};let mobileFire=false,mobileMove={x:0,y:0},mobileAim={x:0,y:0,active:false};
 
 
 // Original game: a compact, arcade dungeon crawler with pixel-drawn food foes.
@@ -239,8 +236,8 @@ function update(dt){
  if(game.state!=='playing'){updateParticles(dt);return}
  let p=game.player;p.inv=Math.max(0,p.inv-dt);p.shoot=Math.max(0,p.shoot-dt);game.skill.cool=Math.max(0,game.skill.cool-dt);game.skill.flash=Math.max(0,game.skill.flash-dt);game.weapon.specialCool=Math.max(0,game.weapon.specialCool-dt);game.weapon.specialFlash=Math.max(0,game.weapon.specialFlash-dt);
  const b=C.getBoundingClientRect(); // mouse already translated by event; angle remains canvas coords.
- if(game.controlMode==='mobile'&&mobileFire){let nearest=null,best=Infinity;for(const e of game.enemies)if(!e.dead){let d=dist(p,e);if(d<best){best=d;nearest=e}}if(nearest)p.angle=Math.atan2(nearest.y-p.y,nearest.x-p.x)}else p.angle=Math.atan2(mouse.y-p.y,mouse.x-p.x);
- let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
+ if(game.controlMode==='mobile'&&mobileAim.active)p.angle=Math.atan2(mobileAim.y,mobileAim.x);else p.angle=Math.atan2(mouse.y-p.y,mouse.x-p.x);
+ let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);if(game.controlMode==='mobile'){dx+=mobileMove.x;dy+=mobileMove.y;}
  if(dx||dy){let L=Math.hypot(dx,dy);dx/=L;dy/=L;moveBody(p,dx*172*dt,dy*172*dt);p.walk+=dt*12;}
  if(mouse.down||mobileFire)playerBullet();
  if(keys.q){keys.q=false;useSkill();}
@@ -348,7 +345,7 @@ function drawBossBar(){
  rect(x,y,w,28,'#0c1123');rect(x+4,y+4,w-8,20,'#2b1e37');text(`LV.${boss.level} BOSS · ${boss.name}`,x+10,y+10,10,palette.orange);text(`DMG ${boss.damage.toFixed(1)} · DUR ${boss.durability} · ${Math.max(0,Math.ceil(boss.hp))}/${boss.maxHp}`,x+w-10,y+10,9,palette.cream,'right');rect(x+10,y+17,w-20,4,'#53253e');rect(x+10,y+17,(w-20)*Math.max(0,boss.hp)/boss.maxHp,4,palette.pink);
 }
 function controlChoiceAt(x,y){let by=584,w=170,h=42,pcx=W/2-180,mobx=W/2+10;if(y>=by&&y<=by+h){if(x>=pcx&&x<=pcx+w)return'pc';if(x>=mobx&&x<=mobx+w)return'mobile'}return null}
-function drawControlChoice(){let by=584,w=170,h=42,pcx=W/2-180,mobx=W/2+10;text('ENTER YOUR NAME, THEN CHOOSE A CONTROL MODE',W/2,563,10,palette.cream,'center');rect(pcx,by,w,h,'#101933');rect(pcx+3,by+3,w-6,h-6,'#263b65');text('PC',pcx+w/2,by+15,14,palette.lime,'center');text('KEYBOARD + MOUSE',pcx+w/2,by+31,8,palette.cream,'center');rect(mobx,by,w,h,'#101933');rect(mobx+3,by+3,w-6,h-6,'#3b3061');text('MOBILE',mobx+w/2,by+15,14,palette.gold,'center');text('TOUCH BUTTONS',mobx+w/2,by+31,8,palette.cream,'center');text('TAP A MODE TO START',W/2,650,11,'#b5c4ec','center');}
+function drawControlChoice(){let by=584,w=170,h=42,pcx=W/2-180,mobx=W/2+10;text('ENTER YOUR NAME, THEN CHOOSE A CONTROL MODE',W/2,563,10,palette.cream,'center');rect(pcx,by,w,h,'#101933');rect(pcx+3,by+3,w-6,h-6,'#263b65');text('PC',pcx+w/2,by+15,14,palette.lime,'center');text('KEYBOARD + MOUSE',pcx+w/2,by+31,8,palette.cream,'center');rect(mobx,by,w,h,'#101933');rect(mobx+3,by+3,w-6,h-6,'#3b3061');text('MOBILE',mobx+w/2,by+15,14,palette.gold,'center');text('DUAL JOYSTICKS',mobx+w/2,by+31,8,palette.cream,'center');text('TAP A MODE TO START',W/2,650,11,'#b5c4ec','center');}
 function drawLeaderboard(x,y,w=330){
  let rows=game.leaderboard.slice(0,4),h=rows.length?42+rows.length*21:92;rect(x,y,w,h,'#0c1123');rect(x+4,y+4,w-8,h-8,'#1b2541');text('TOP PLAYERS',x+14,y+18,14,palette.gold);text('LOCAL HALL OF FAME',x+w-14,y+18,9,'#aebae6','right');
  if(!rows.length){text('No completed runs yet.',x+w/2,y+50,11,palette.cream,'center');text('Finish Floor 5 to claim the top spot!',x+w/2,y+70,10,palette.lime,'center');return}
@@ -377,22 +374,27 @@ function drawProjectile(q){
  else if(q.ammo==='berry'){px(x-6,y-5,5,8,ammoColors.berry);px(x,y-6,6,9,ammoColors.berry);px(x-2,y-9,5,4,'#8edb84');px(x-2,y-1,3,3,'#f5dcff');}
  else {px(x-6,y-5,12,11,ammoColors.apple);px(x-3,y-9,5,5,'#6fbd70');px(x-2,y-2,3,3,'#ffe6b3');}
 }
-function syncTouchControls(){touchControls.classList.toggle('active',game.controlMode==='mobile'&&game.state==='playing');deviceChoice.classList.toggle('active',game.state==='title')}
+function syncTouchControls(){let active=game.controlMode==='mobile'&&game.state==='playing';touchControls.classList.toggle('active',active);deviceChoice.classList.toggle('active',game.state==='title');if(!active){mobileFire=false;mobileMove.x=0;mobileMove.y=0;mobileAim.active=false;}}
 function render(){syncTouchControls();let sx=game.shake?rand(-game.shake,game.shake):0,sy=game.shake?rand(-game.shake,game.shake):0;ctx.save();ctx.translate(sx,sy);drawFloor();drawExit();for(const c of game.crates)drawCrate(c);for(const d of game.drops)drawProduce(d);for(const e of game.enemies)if(!e.dead||e.dead>0)drawEnemy(e);for(const q of game.bullets)drawProjectile(q);for(const q of game.particles){ctx.globalAlpha=Math.max(0,q.life/q.max);px(q.x-q.size/2,q.y-q.size/2,q.size,q.size,q.color)}ctx.globalAlpha=1;drawPlayer();drawSkillNova();ctx.restore();if(game.player)drawHud();drawOverlay();}
 let last=performance.now();function loop(now){let dt=Math.min(.033,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(loop)}
 function start(){if(!game.controlMode)game.controlMode='pc';sound('start');game.floor=1;game.score=0;game.scoreSaved=false;game.weapon={level:1,damage:1,fireRate:1,spread:1,ammoIndex:0,specialCool:0,specialMax:9,specialFlash:0};game.skill={cool:0,max:7,flash:0};game.upgradeOptions=[];game.nutritionQuizPassed=false;game.quiz=null;resetFloor()}
 function canvasPoint(ev){let r=C.getBoundingClientRect();return {x:(ev.clientX-r.left)*W/r.width,y:(ev.clientY-r.top)*H/r.height}}
 function chooseControlMode(mode){
  let name=playerNameInput.value.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,14);if(!name){playerNameInput.classList.add('required');playerNameInput.placeholder='NAME REQUIRED';playerNameInput.focus();return}
- game.playerName=name.toUpperCase();playerNameInput.value=game.playerName;playerNameInput.classList.remove('required');game.controlMode=mode;mobileFire=false;start()
+ game.playerName=name.toUpperCase();playerNameInput.value=game.playerName;playerNameInput.classList.remove('required');game.controlMode=mode;mobileFire=false;mobileMove={x:0,y:0};mobileAim={x:0,y:0,active:false};start()
 }
 window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();keys[k]=true;if(['arrowup','arrowdown','arrowleft','arrowright',' ','enter'].includes(k))e.preventDefault();if(k==='enter'&&(game.state==='title'||game.state==='dead'||game.state==='win')){if(game.state==='title')chooseControlMode('pc');else start()}if(game.state==='quiz'&&['1','2','3'].includes(k))answerNutritionQuiz(Number(k)-1);if(game.state==='upgrade'&&['1','2','3'].includes(k))chooseUpgrade(Number(k)-1);});
 window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 C.addEventListener('pointermove',e=>Object.assign(mouse,canvasPoint(e)));C.addEventListener('pointerdown',e=>{Object.assign(mouse,canvasPoint(e));if(game.state==='title'){let mode=controlChoiceAt(mouse.x,mouse.y);if(mode)chooseControlMode(mode);return}if(game.state==='dead'||game.state==='win'){start();return}else if(game.state==='quiz'){let i=quizChoiceAt(mouse.x,mouse.y);if(i>=0)answerNutritionQuiz(i);return}else if(game.state==='upgrade'){let i=Math.floor((mouse.x-(W/2-345))/235);if(mouse.y>=258&&mouse.y<=435&&i>=0&&i<3&&mouse.x>=W/2-345+i*235&&mouse.x<=W/2-130+i*235)chooseUpgrade(i);return}mouse.down=true;try{C.setPointerCapture(e.pointerId)}catch(err){}});window.addEventListener('pointerup',()=>mouse.down=false);C.addEventListener('contextmenu',e=>e.preventDefault());
+function bindVirtualStick(stick,kind){
+ const knob=stick.querySelector('.stick-knob');let activeId=null;
+ function setVector(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,max=r.width*.31,len=Math.hypot(dx,dy)||1,scale=Math.min(1,max/len),vx=dx*scale/max,vy=dy*scale/max;knob.style.transform=`translate(calc(-50% + ${vx*max}px),calc(-50% + ${vy*max}px))`;if(kind==='move'){mobileMove.x=vx;mobileMove.y=vy}else{mobileAim={x:vx,y:vy,active:Math.hypot(vx,vy)>.12};mobileFire=mobileAim.active}}
+ function clear(e){if(activeId!==null&&(!e||e.pointerId===activeId)){activeId=null;knob.style.transform='translate(-50%,-50%)';if(kind==='move')mobileMove={x:0,y:0};else {mobileAim={x:0,y:0,active:false};mobileFire=false;}}}
+ stick.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();activeId=e.pointerId;try{stick.setPointerCapture(e.pointerId)}catch(err){};setVector(e)});stick.addEventListener('pointermove',e=>{if(e.pointerId===activeId)setVector(e)});stick.addEventListener('pointerup',clear);stick.addEventListener('pointercancel',clear);stick.addEventListener('lostpointercapture',clear);
+}
 function bindTouchControls(){
- document.querySelectorAll('[data-hold]').forEach(btn=>{let key=btn.dataset.hold,down=e=>{e.preventDefault();e.stopPropagation();keys[key]=true;btn.classList.add('pressed');try{btn.setPointerCapture(e.pointerId)}catch(err){}},up=e=>{e.preventDefault();keys[key]=false;btn.classList.remove('pressed')};btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('lostpointercapture',up)});
  document.querySelectorAll('[data-tap]').forEach(btn=>{let key=btn.dataset.tap,down=e=>{e.preventDefault();e.stopPropagation();keys[key]=true;btn.classList.add('pressed');setTimeout(()=>{keys[key]=false;btn.classList.remove('pressed')},80)};btn.addEventListener('pointerdown',down)});
- let fire=document.getElementById('touchFire'),down=e=>{e.preventDefault();e.stopPropagation();mobileFire=true;fire.classList.add('pressed');try{fire.setPointerCapture(e.pointerId)}catch(err){}},up=e=>{e.preventDefault();mobileFire=false;fire.classList.remove('pressed')};fire.addEventListener('pointerdown',down);fire.addEventListener('pointerup',up);fire.addEventListener('pointercancel',up);fire.addEventListener('lostpointercapture',up);
+ bindVirtualStick(document.getElementById('moveStick'),'move');bindVirtualStick(document.getElementById('aimStick'),'aim');
 }
 bindTouchControls();
 playerNameInput.addEventListener('input',()=>{playerNameInput.classList.remove('required');playerNameInput.placeholder='YOUR NAME'});
